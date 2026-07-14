@@ -17,6 +17,7 @@ import {
   Package,
   BarChart2,
   Layers,
+  RefreshCcw,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -33,6 +34,7 @@ export type PanelId =
   | 'riaf'
   | 'settings'
   // AEP panels
+  | 'cycle'
   | 'domain'
   | 'valueStream'
   | 'signals'
@@ -58,8 +60,9 @@ const TOP_ITEMS: NavItem[] = [
   { id: 'search', label: 'Search', Icon: Search },
   { id: 'symbols', label: 'Symbols', Icon: Code2 },
   { id: 'riaf', label: 'RIAF', Icon: Zap },
-  // AEP section
-  { id: 'domain', label: 'Domain', Icon: BookOpen, dividerBefore: true },
+  // AEP section — Cycle Runner is the front door
+  { id: 'cycle', label: 'Cycle Runner', Icon: RefreshCcw, dividerBefore: true },
+  { id: 'domain', label: 'Domain', Icon: BookOpen },
   { id: 'valueStream', label: 'Value Stream', Icon: Layers },
   { id: 'signals', label: 'Customer Signals', Icon: MessageSquare },
   { id: 'businessValue', label: 'Business Value', Icon: TrendingUp },

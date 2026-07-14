@@ -7,12 +7,15 @@ import type { CodebaseSearchResult } from '@shared/index'
 
 const DEFAULT_MODEL = 'text-embedding-3-small'
 const DEFAULT_BASE_URL = 'https://api.openai.com'
-/** Keep batches small — large Odyssey workspaces hang on 96×long chunks. */
-const EMBED_BATCH_SIZE = 24
+/** Small batches — large payloads routinely hit timeout / ECONNRESET in Electron. */
+const EMBED_BATCH_SIZE = 8
 const EMBED_DIMENSIONS = 1536
-/** OpenAI embedding models accept ~8k tokens; stay well under with chars. */
-const MAX_EMBED_CHARS = 6_000
-const FETCH_TIMEOUT_MS = 45_000
+/** Keep under ~2k tokens to stay fast and within rate limits. */
+const MAX_EMBED_CHARS = 2_500
+const FETCH_TIMEOUT_MS = 60_000
+const MAX_RETRIES = 3
+const RETRY_BASE_MS = 1_500
+const INTER_BATCH_DELAY_MS = 200
 const RRF_K = 60
 
 // ---------------------------------------------------------------------------
@@ -116,11 +119,11 @@ export class EmbeddingService {
 
       const batchNum = Math.floor(i / EMBED_BATCH_SIZE) + 1
       const batch = pending.slice(i, i + EMBED_BATCH_SIZE)
-      const texts = batch.map((c) =>
-        c.chunk_text.length > MAX_EMBED_CHARS
-          ? c.chunk_text.slice(0, MAX_EMBED_CHARS)
-          : c.chunk_text,
-      )
+      const texts = batch.map((c) => {
+        const t = (c.chunk_text ?? '').trim()
+        if (!t) return ' '
+        return t.length > MAX_EMBED_CHARS ? t.slice(0, MAX_EMBED_CHARS) : t
+      })
 
       opts?.onProgress?.(
         i,
@@ -130,7 +133,7 @@ export class EmbeddingService {
 
       let embeddings: number[][]
       try {
-        embeddings = await this.fetchEmbeddings(texts, opts?.signal)
+        embeddings = await this.fetchEmbeddingsWithRetry(texts, opts?.signal)
         consecutiveFailures = 0
       } catch (err) {
         consecutiveFailures++
@@ -138,7 +141,6 @@ export class EmbeddingService {
           `[EmbeddingService] batch ${batchNum}/${totalBatches} failed:`,
           err instanceof Error ? err.message : err,
         )
-        // Don't block indexing forever — bail after a few hard failures
         if (consecutiveFailures >= 3) {
           opts?.onProgress?.(
             i,
@@ -147,6 +149,8 @@ export class EmbeddingService {
           )
           return
         }
+        // Brief pause before the next batch after a hard failure
+        await sleep(RETRY_BASE_MS)
         continue
       }
 
@@ -155,6 +159,10 @@ export class EmbeddingService {
         .filter((r) => r.vec.length > 0)
 
       insertBatch(rows)
+
+      if (i + EMBED_BATCH_SIZE < pending.length) {
+        await sleep(INTER_BATCH_DELAY_MS)
+      }
     }
 
     opts?.onProgress?.(pending.length, pending.length, `Embedded ${pending.length} chunks`)
@@ -278,6 +286,34 @@ export class EmbeddingService {
   // OpenAI-compat /v1/embeddings
   // ---------------------------------------------------------------------------
 
+  private async fetchEmbeddingsWithRetry(
+    texts: string[],
+    signal?: AbortSignal,
+  ): Promise<number[][]> {
+    let lastErr: unknown
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      if (signal?.aborted) throw new Error('Aborted')
+      try {
+        return await this.fetchEmbeddings(texts, signal)
+      } catch (err) {
+        lastErr = err
+        const msg = err instanceof Error ? err.message : String(err)
+        const retryable =
+          /timeout|aborted|fetch failed|ECONNRESET|ETIMEDOUT|network|429|503|502|500/i.test(
+            msg,
+          )
+        if (!retryable || attempt === MAX_RETRIES) break
+        const delay =
+          RETRY_BASE_MS * 2 ** (attempt - 1) + Math.floor(Math.random() * 400)
+        console.warn(
+          `[EmbeddingService] retry ${attempt}/${MAX_RETRIES} after: ${msg} (wait ${delay}ms)`,
+        )
+        await sleep(delay)
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
+  }
+
   private async fetchEmbeddings(
     texts: string[],
     signal?: AbortSignal,
@@ -285,21 +321,30 @@ export class EmbeddingService {
     const url = `${this.baseUrl}/v1/embeddings`
     const body = JSON.stringify({ input: texts, model: this.model })
 
+    // Fresh timeout per attempt — do not reuse a previously aborted signal.
     const timeout = AbortSignal.timeout(FETCH_TIMEOUT_MS)
-    const merged =
-      signal != null && typeof AbortSignal.any === 'function'
-        ? AbortSignal.any([signal, timeout])
-        : timeout
+    const onAbort = () => {
+      /* parent abort races with timeout */
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body,
-      signal: merged,
-    })
+    let response: Response
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body,
+        signal:
+          signal != null && typeof AbortSignal.any === 'function'
+            ? AbortSignal.any([signal, timeout])
+            : timeout,
+      })
+    } finally {
+      signal?.removeEventListener('abort', onAbort)
+    }
 
     if (!response.ok) {
       const errBody = await response.text().catch(() => '')
@@ -309,7 +354,6 @@ export class EmbeddingService {
     }
 
     const json = (await response.json()) as EmbedResponse
-    // Sort by index to ensure order matches input
     const sorted = [...json.data].sort((a, b) => a.index - b.index)
     return sorted.map((d) => d.embedding)
   }
@@ -400,4 +444,8 @@ function mergeRRF(
       const r = resultMap.get(k)!
       return { ...r, score }
     })
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }

@@ -30,6 +30,11 @@ import { A13CrossFunctionalAgent } from './downstream/agents/a13CrossFunctionalA
 import { A14LearningAgent, type OutcomeReport, type VerdictSummary } from './downstream/agents/a14LearningAgent'
 import { wireAEP, type AEPGovernanceAPI } from './aepOrchestrator'
 import type { GoldenThread, HypothesisPortfolioRow, ValueStreamState } from '@shared/index'
+import {
+  registerCycleIpcHandlers,
+  cycleHandleAepTick,
+} from '../cycle/cycleIpcHandlers'
+import { registerUxReadModels } from '../ux/uxReadModels'
 
 type WorkspaceAccessors = {
   getDb: () => Database.Database | null
@@ -153,6 +158,16 @@ export function registerAepIpcHandlers(accessors: WorkspaceAccessors): void {
   handlersRegistered = true
 
   const getProvider = accessors.getProvider
+
+  // Cycle Runner IPC (additive sequencing layer)
+  registerCycleIpcHandlers({
+    getDb: accessors.getDb,
+    getWin: accessors.getWin,
+    getProvider,
+  })
+
+  // Journey UX read-models
+  registerUxReadModels({ getDb: accessors.getDb })
 
   // ── Domain ─────────────────────────────────────────────────────────────────
 
@@ -627,6 +642,7 @@ export function registerAepIpcHandlers(accessors: WorkspaceAccessors): void {
       const { db } = requireCtx(accessors)
       govApi = wireAEP({ db })
       const result = govApi.orchestrator.tick()
+      cycleHandleAepTick()
       accessors.getWin()?.webContents.send(IPC.AEP_STATE_CHANGED, result)
       return result
     } catch (err) {

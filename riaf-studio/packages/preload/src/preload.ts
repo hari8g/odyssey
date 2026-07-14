@@ -294,6 +294,41 @@ const api = {
   aepDomainFIS: (query: string, mode?: string) =>
     ipcRenderer.invoke('aep:domainFIS', { query, mode }),
 
+  // ── Cycle Runner ───────────────────────────────────────────────────────────
+  cycleStart: (input: { label: string; mode: 'live' | 'demo'; painPointIds?: number[] }) =>
+    ipcRenderer.invoke('cycle:start', input),
+  cycleList: () => ipcRenderer.invoke('cycle:list'),
+  cycleGet: (runId: number) => ipcRenderer.invoke('cycle:get', { runId }),
+  cycleTimeline: (runId: number) => ipcRenderer.invoke('cycle:timeline', { runId }),
+  cycleAdvance: (runId: number) => ipcRenderer.invoke('cycle:advance', { runId }),
+  cycleAbort: (runId: number) => ipcRenderer.invoke('cycle:abort', { runId }),
+  cyclePortfolioGate: (
+    runId: number,
+    input: {
+      decision: 'admit' | 'defer' | 'reject'
+      approvedByRole: string
+      rationale: string
+      featureNodeId?: number
+    },
+  ) => ipcRenderer.invoke('cycle:portfolioGate', { runId, input }),
+  cycleSignRelease: (runId: number, role: string, rationale: string) =>
+    ipcRenderer.invoke('cycle:signRelease', { runId, role, rationale }),
+  cycleSimulateSignals: (runId: number) =>
+    ipcRenderer.invoke('cycle:simulateSignals', { runId }),
+  cycleSimulateCI: (runId: number) => ipcRenderer.invoke('cycle:simulateCI', { runId }),
+  cycleSimulateKpi: (runId: number, drift?: number) =>
+    ipcRenderer.invoke('cycle:simulateKpi', { runId, drift }),
+  onCycleUpdate: (handler: Handler<unknown>): Unsubscribe => on('cycle:update', handler),
+  onCycleProgress: (handler: Handler<unknown>): Unsubscribe => on('cycle:progress', handler),
+
+  // ── Journey UI read models ─────────────────────────────────────────────────
+  uxGetJourneyBoard: () => ipcRenderer.invoke('ux:getJourneyBoard'),
+  uxGetFeatureStory: (featureId: number) =>
+    ipcRenderer.invoke('ux:getFeatureStory', { featureId }),
+  uxGetActions: (opts?: { role?: string }) => ipcRenderer.invoke('ux:getActions', opts),
+  uxGetGraphNode: (nodeId: number) => ipcRenderer.invoke('ux:getGraphNode', { nodeId }),
+  uxGetHomeStats: () => ipcRenderer.invoke('ux:getHomeStats'),
+
   // ── AEP: Events ────────────────────────────────────────────────────────────
   onAepPassProgress: (handler: Handler<unknown>): Unsubscribe =>
     on('aep:passProgress', handler),

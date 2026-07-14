@@ -382,3 +382,44 @@ CREATE TABLE IF NOT EXISTS agent_calibration (
 CREATE INDEX IF NOT EXISTS idx_ac_agent ON agent_calibration(agent_id, cycle_end_date);
 
 `
+
+/** Cycle Runner V4 — resumable guided value-stream runs */
+export const SCHEMA_V4 = `
+CREATE TABLE IF NOT EXISTS cycle_runs (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  label               TEXT NOT NULL,
+  mode                TEXT NOT NULL DEFAULT 'live' CHECK(mode IN ('live','demo')),
+  current_stage       TEXT NOT NULL DEFAULT 'SIGNALS',
+  status              TEXT NOT NULL DEFAULT 'running'
+    CHECK(status IN ('running','waiting_gate','waiting_external','completed','aborted','error')),
+  error               TEXT,
+  pain_point_ids_json TEXT,
+  feature_node_id     INTEGER REFERENCES graph_nodes(id),
+  brief_id            INTEGER REFERENCES graph_nodes(id),
+  biz_assess_id       INTEGER REFERENCES graph_nodes(id),
+  dev_assess_id       INTEGER REFERENCES graph_nodes(id),
+  gtm_assess_id       INTEGER REFERENCES graph_nodes(id),
+  packet_id           INTEGER REFERENCES graph_nodes(id),
+  readiness_report_id INTEGER REFERENCES graph_nodes(id),
+  rc_id               INTEGER REFERENCES graph_nodes(id),
+  deployment_id       INTEGER REFERENCES graph_nodes(id),
+  outcome_report_id   INTEGER REFERENCES graph_nodes(id),
+  created_at          INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+  updated_at          INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+);
+CREATE INDEX IF NOT EXISTS idx_cr_status ON cycle_runs(status);
+
+CREATE TABLE IF NOT EXISTS cycle_stage_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id      INTEGER NOT NULL REFERENCES cycle_runs(id) ON DELETE CASCADE,
+  stage       TEXT NOT NULL,
+  event       TEXT NOT NULL
+    CHECK(event IN ('entered','agent_started','agent_finished','gate_approved',
+                    'gate_rejected','simulated','advanced','bounced','halted','error')),
+  agent_id    TEXT,
+  artifact_node_id INTEGER REFERENCES graph_nodes(id),
+  detail_json TEXT,
+  ts          INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+);
+CREATE INDEX IF NOT EXISTS idx_csl_run ON cycle_stage_log(run_id, ts);
+`

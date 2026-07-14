@@ -4,14 +4,21 @@ out/
 dist/
 .vite/
 coverage/
+*.tsbuildinfo
 
-# Local workspace / DB (can be large + contain local data)
-.riaf/
+# Accidental tsc emit beside sources (shadows .tsx/.ts in Vite)
+**/packages/**/src/**/*.js
+**/packages/**/src/**/*.js.map
+**/packages/**/src/**/*.d.ts
+**/packages/**/src/**/*.d.ts.map
 
 # Native / OS
 *.node
 .DS_Store
 *.log
+
+# Local workspace / DB (can be large + contain local data)
+.riaf/
 
 # Secrets / local env
 .env

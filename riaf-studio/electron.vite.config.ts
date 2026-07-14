@@ -30,6 +30,8 @@ export default defineConfig({
     root: resolve('packages/renderer'),
     plugins: [react()],
     resolve: {
+      // Prefer TypeScript sources over stale tsc emit (.js) in src/
+      extensions: ['.tsx', '.ts', '.jsx', '.mjs', '.js', '.json'],
       alias: {
         '@': resolve('packages/renderer/src'),
         '@shared': resolve('packages/shared/src'),

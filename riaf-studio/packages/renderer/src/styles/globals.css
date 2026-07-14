@@ -3,13 +3,13 @@
 @tailwind utilities;
 
 :root {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
   font-size: 13px;
   line-height: 1.5;
-  --color-surface: #0d0d0f;
-  --color-surface-2: #141418;
-  --color-surface-3: #1c1c23;
-  --color-border: #2a2a35;
+  --color-surface: #131417;
+  --color-surface-2: #1b1d21;
+  --color-surface-3: #24262b;
+  --color-border: #2a2d33;
 }
 
 * {
@@ -18,9 +18,9 @@
 
 body {
   margin: 0;
-  background-color: var(--color-surface);
-  color: #e5e7eb;
-  font-family: 'Inter', sans-serif;
+  background-color: #0b0c0e;
+  color: #f2f3f5;
+  font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   user-select: none;
@@ -32,19 +32,28 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-surface-2);
+  background: #1b1d21;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: #2a2d33;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-border) 80%, white);
+  background: #3d4149;
 }
 
 input,
 textarea {
   user-select: text;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

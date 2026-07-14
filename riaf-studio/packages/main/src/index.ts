@@ -15,6 +15,10 @@ import { wireISS } from './iss/issOrchestrator'
 import { resetIssIpcState } from './iss/issIpcHandlers'
 import { wireDomain } from './domain/domainOrchestrator'
 import { createLLMProvider } from './llm/createProvider'
+import {
+  startCycleTickLoop,
+  stopCycleTickLoop,
+} from './cycle/cycleIpcHandlers'
 import type Database from 'better-sqlite3'
 
 // ─── Module-level state ───────────────────────────────────────────────────────
@@ -75,6 +79,7 @@ async function teardownWorkspace(): Promise<void> {
   pipeline?.abort()
   pipeline = null
   riafController = null
+  stopCycleTickLoop()
   openWorkspaceRoot = null
   openDb = null
   resetIssIpcState()
@@ -103,6 +108,12 @@ export async function openWorkspace(
   pipeline = new IndexingPipeline(db, dir)
   watcher = new FileWatcher(db, dir)
   riafController = new RiafController(db, dir, win)
+
+  startCycleTickLoop({
+    getDb: getOpenDb,
+    getWin: () => mainWindow,
+    getProvider: () => createLLMProvider(),
+  })
 
   const sessionId = bumpWorkspaceSession()
 

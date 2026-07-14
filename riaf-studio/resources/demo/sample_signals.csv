@@ -1,0 +1,25 @@
+date,cohort,type,text
+2026-06-01,fleet-operators,feature_request,We manage 40 trucks and have to dispute each wrong charge one by one. Need bulk dispute.
+2026-06-02,fleet-operators,feature_request,Please add CSV upload for disputing multiple toll charges at once
+2026-06-03,fleet-operators,defect,Charged twice on NH-48 gantry 12 for vehicle KA01AB1234; dispute portal only lets me pick one txn
+2026-06-04,enterprise,feature_request,Our accounts team spends 3 days/month filing individual disputes. Batch API please.
+2026-06-05,fleet-operators,churn_risk,Considering switching providers because dispute handling wastes hours weekly
+2026-06-06,individual,usability,Dispute form asks for transaction id which I can never find
+2026-06-07,fleet-operators,feature_request,Bulk dispute with one evidence upload shared across selected charges
+2026-06-08,fleet-operators,pricing,Toll reconciliation costs us more in admin time than the tolls themselves
+2026-06-09,enterprise,feature_request,Need role-based access so fleet managers can approve batch disputes
+2026-06-10,fleet-operators,defect,Upload fails silently when CSV has more than 50 rows
+2026-06-11,fleet-operators,feature_request,Want status tracking for each dispute in a bulk batch
+2026-06-12,individual,usability,Cannot attach multiple PDFs to a single dispute ticket
+2026-06-13,enterprise,feature_request,Integrate dispute outcomes into our ERP for auto reconciliation
+2026-06-14,fleet-operators,churn_risk,Finance head flagged switching toll providers if disputes stay manual
+2026-06-15,fleet-operators,feature_request,Filter disputes by gantry and date range before bulk submit
+2026-06-16,enterprise,defect,Duplicate confirmation emails sent for every line item in a batch
+2026-06-17,fleet-operators,feature_request,Allow templates for recurring dispute evidence for common gantries
+2026-06-18,individual,pricing,I was charged for a road I never took; dispute process is too long
+2026-06-19,fleet-operators,feature_request,API endpoint to list open disputes for our fleet vehicles
+2026-06-20,enterprise,usability,Dashboard does not show aggregate dispute SLAs by cohort
+2026-06-21,fleet-operators,feature_request,Notify drivers when a disputed charge is refunded
+2026-06-22,fleet-operators,defect,Batch submit rejects valid VINs with spaces
+2026-06-23,enterprise,feature_request,Export dispute results as CSV for finance audit packs
+2026-06-24,fleet-operators,feature_request,Support bulk disputes across multiple toll operators in one upload

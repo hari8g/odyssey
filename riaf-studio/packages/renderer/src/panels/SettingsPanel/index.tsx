@@ -215,6 +215,24 @@ export function SettingsPanel() {
         </Field>
       </Section>
 
+      <Section title="Journey UI">
+        <Field label="First-run tour">
+          <button
+            type="button"
+            onClick={() => {
+              void import('@/design/tour').then(({ resetTourFlag }) => {
+                resetTourFlag()
+                window.location.hash = '#/'
+                window.location.reload()
+              })
+            }}
+            className="px-3 py-1.5 text-xs rounded border border-border bg-surface-3 text-gray-300 hover:text-white"
+          >
+            Replay Journey tour
+          </button>
+        </Field>
+      </Section>
+
       <Section title="LLM Provider">
         <div className="flex flex-wrap gap-1.5">
           {PROVIDERS.map((p) => (

@@ -1,5 +1,13 @@
-import { useEffect, useCallback, useState, useRef } from 'react'
-import { Sidebar, type PanelId } from '@/components/Sidebar'
+import { useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { AppShell } from '@/shell/AppShell'
+import { PeekProvider, ToastProvider } from '@/design/primitives'
+import { PersonaHome } from '@/screens/home/PersonaHome'
+import { JourneyCanvas } from '@/screens/journey/JourneyCanvas'
+import { FeatureStory } from '@/screens/story/FeatureStory'
+import { ActionsInbox } from '@/screens/actions/ActionsInbox'
+import { DecideRoom } from '@/screens/gates/DecideRoom'
+import { LearnHub } from '@/screens/learn/LearnHub'
 import { WorkspacePanel } from '@/panels/WorkspacePanel'
 import { IndexingPanel } from '@/panels/IndexingPanel'
 import { UCGGraphPanel } from '@/panels/UCGGraphPanel'
@@ -17,11 +25,14 @@ import { CustomerSignalPanel } from '@/panels/aep/CustomerSignalPanel'
 import { BusinessValuePanel } from '@/panels/aep/BusinessValuePanel'
 import { ConsolidationPanel } from '@/panels/aep/ConsolidationPanel'
 import { OutcomeDashboardPanel } from '@/panels/aep/OutcomeDashboardPanel'
+import { CycleRunnerPanel } from '@/panels/aep/CycleRunnerPanel'
 import { useWorkspaceStore } from '@/store/workspace.store'
 import { useIndexingStore } from '@/store/indexing.store'
 import { useRiafStore } from '@/store/riaf.store'
 import { useISSStore } from '@/store/iss.store'
 import { useAepStore } from '@/store/aep.store'
+import { useCycleStore } from '@/store/cycle.store'
+import { invalidateUxCaches, useUXStore } from '@/store/ux/ux.store'
 import { applyBackgroundTheme } from '@/theme/backgroundThemes'
 
 async function refreshRecentWorkspaces(
@@ -41,11 +52,15 @@ async function applyStoredBackgroundTheme(): Promise<void> {
   }
 }
 
-export function App() {
-  const [activePanel, setActivePanel] = useState<PanelId>('workspace')
+function Room({ children }: { children: ReactNode }) {
+  return <div className="h-full min-w-0 overflow-hidden bg-surface-2">{children}</div>
+}
+
+function WorkspaceListener() {
+  const navigate = useNavigate()
   const workspaceSessionRef = useRef(0)
 
-  const { root, setRoot, setProfile, setRecentWorkspaces } = useWorkspaceStore()
+  const { setRoot, setProfile, setRecentWorkspaces } = useWorkspaceStore()
   const { applyProgress, setRunning, reset: resetIndexing } = useIndexingStore()
   const { setRunState, appendChunk, clearBuffer, reset: resetRiaf } = useRiafStore()
   const {
@@ -55,26 +70,33 @@ export function App() {
     setCoChangeWarning,
     reset: resetIss,
   } = useISSStore()
-
-  const { setPassProgress: setAepProgress, setPassRunning: setAepRunning, reset: resetAep } = useAepStore()
-
-  const hasWorkspace = root !== null
+  const { setPassProgress: setAepProgress, setPassRunning: setAepRunning, reset: resetAep } =
+    useAepStore()
+  const { upsertRun: upsertCycleRun, setProgress: setCycleProgress, reset: resetCycle } =
+    useCycleStore()
+  const { refreshHome, reset: resetUx } = useUXStore()
 
   const resetForNewWorkspace = useCallback(() => {
     resetIndexing()
     resetRiaf()
     resetIss()
     resetAep()
-  }, [resetIndexing, resetRiaf, resetIss, resetAep])
+    resetCycle()
+    resetUx()
+    invalidateUxCaches()
+  }, [resetIndexing, resetRiaf, resetIss, resetAep, resetCycle, resetUx])
 
-  // Load recent workspaces + background theme on mount
   useEffect(() => {
     void refreshRecentWorkspaces(setRecentWorkspaces)
     void applyStoredBackgroundTheme()
   }, [setRecentWorkspaces])
 
-  // Wire IPC event listeners
   useEffect(() => {
+    const api = window.electronAPI as unknown as Record<
+      string,
+      ((h: (d: unknown) => void) => () => void) | undefined
+    >
+
     const unsubs = [
       window.electronAPI.onWorkspaceChanged(({ root: dir, sessionId }) => {
         workspaceSessionRef.current = sessionId
@@ -82,7 +104,7 @@ export function App() {
         setRoot(dir)
         setProfile(null)
         void refreshRecentWorkspaces(setRecentWorkspaces)
-        setActivePanel('indexing')
+        navigate('/room/indexing')
       }),
 
       window.electronAPI.onIndexerProgress((status) => {
@@ -136,17 +158,29 @@ export function App() {
         )
       }),
 
-      // AEP events
-      (window.electronAPI as unknown as Record<string, (h: (d: unknown) => void) => () => void>)
-        .onAepPassProgress?.((p) => {
-          setAepProgress(p as Parameters<typeof setAepProgress>[0])
-          setAepRunning(true)
-        }) ?? (() => undefined),
-      (window.electronAPI as unknown as Record<string, (h: (d: unknown) => void) => () => void>)
-        .onAepPassComplete?.(() => {
-          setAepRunning(false)
-          setAepProgress(null)
-        }) ?? (() => undefined),
+      api.onAepPassProgress?.((p) => {
+        setAepProgress(p as Parameters<typeof setAepProgress>[0])
+        setAepRunning(true)
+      }) ?? (() => undefined),
+      api.onAepPassComplete?.(() => {
+        setAepRunning(false)
+        setAepProgress(null)
+      }) ?? (() => undefined),
+      api.onAepStateChanged?.(() => {
+        invalidateUxCaches()
+        void refreshHome()
+      }) ?? (() => undefined),
+
+      api.onCycleUpdate?.((r) => {
+        if (r && typeof r === 'object' && 'id' in (r as object)) {
+          upsertCycleRun(r as Parameters<typeof upsertCycleRun>[0])
+        }
+        invalidateUxCaches()
+        void refreshHome()
+      }) ?? (() => undefined),
+      api.onCycleProgress?.((p) => {
+        setCycleProgress(p as Parameters<typeof setCycleProgress>[0])
+      }) ?? (() => undefined),
     ]
 
     return () => unsubs.forEach((fn) => fn())
@@ -166,82 +200,219 @@ export function App() {
     setCoChangeWarning,
     setAepProgress,
     setAepRunning,
+    upsertCycleRun,
+    setCycleProgress,
+    navigate,
+    refreshHome,
   ])
 
-  // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
       if (mod && e.key === 'o') {
         e.preventDefault()
-        setActivePanel('workspace')
+        navigate('/room/workspace')
       } else if (mod && e.key === 'r') {
         e.preventDefault()
-        if (hasWorkspace) {
+        if (useWorkspaceStore.getState().root) {
           useIndexingStore.getState().reset()
           window.electronAPI.startIndexer()
-          setActivePanel('indexing')
+          navigate('/room/indexing')
         }
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [hasWorkspace])
+  }, [navigate])
 
-  const handleWorkspaceOpened = useCallback(
-    (_dir: string) => {
-      // workspace:changed (sent from main before indexing) owns reset + navigation
-      setActivePanel('indexing')
-    },
-    [],
+  return null
+}
+
+function IndexingRoom() {
+  const navigate = useNavigate()
+  return (
+    <Room>
+      <IndexingPanel onRunRiaf={() => navigate('/room/riaf')} />
+    </Room>
   )
+}
 
-  const renderPanel = () => {
-    switch (activePanel) {
-      case 'workspace':
-        return <WorkspacePanel onWorkspaceOpened={handleWorkspaceOpened} />
-      case 'indexing':
-        return <IndexingPanel onRunRiaf={() => setActivePanel('riaf')} />
-      case 'ucg':
-        return <UCGGraphPanel />
-      case 'iss':
-        return <ISSGraphPanel />
-      case 'features':
-        return <FeaturePanel />
-      case 'po':
-        return <POWorkbenchPanel />
-      case 'impact':
-        return <ImpactPanel />
-      case 'search':
-        return <SearchPanel />
-      case 'symbols':
-        return <SymbolBrowserPanel />
-      case 'riaf':
-        return <RiafPanel />
-      case 'settings':
-        return <SettingsPanel />
-      // AEP panels
-      case 'domain':
-        return <DomainBrowserPanel />
-      case 'valueStream':
-        return <ValueStreamPanel />
-      case 'signals':
-        return <CustomerSignalPanel />
-      case 'businessValue':
-        return <BusinessValuePanel />
-      case 'consolidation':
-        return <ConsolidationPanel />
-      case 'outcomes':
-        return <OutcomeDashboardPanel />
-    }
-  }
+function AppRoutes() {
+  const handleWorkspaceOpened = useCallback((_dir: string) => {
+    // workspace:changed owns reset + navigation
+  }, [])
 
   return (
-    <div className="flex h-screen w-screen max-w-full bg-surface overflow-hidden min-w-0">
-      <Sidebar active={activePanel} hasWorkspace={hasWorkspace} onChange={setActivePanel} />
-      <div className="flex-1 min-w-0 overflow-hidden flex flex-col bg-surface-2">
-        <div className="h-full min-w-0 overflow-hidden">{renderPanel()}</div>
-      </div>
-    </div>
+    <>
+      <WorkspaceListener />
+      <Routes>
+        <Route element={<AppShell />}>
+          <Route index element={<PersonaHome />} />
+          <Route path="actions" element={<ActionsInbox />} />
+          <Route path="journey" element={<JourneyCanvas />} />
+          <Route
+            path="journey/new"
+            element={
+              <Room>
+                <CycleRunnerPanel />
+              </Room>
+            }
+          />
+          <Route path="feature/:id" element={<FeatureStory />} />
+          <Route path="gate/:runId/:gateType" element={<DecideRoom />} />
+          <Route path="room/learn" element={<LearnHub />} />
+          <Route
+            path="room/workspace"
+            element={
+              <Room>
+                <WorkspacePanel onWorkspaceOpened={handleWorkspaceOpened} />
+              </Room>
+            }
+          />
+          <Route path="room/indexing" element={<IndexingRoom />} />
+          <Route
+            path="room/ucg"
+            element={
+              <Room>
+                <UCGGraphPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/iss"
+            element={
+              <Room>
+                <ISSGraphPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/features"
+            element={
+              <Room>
+                <FeaturePanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/po"
+            element={
+              <Room>
+                <POWorkbenchPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/impact"
+            element={
+              <Room>
+                <ImpactPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/search"
+            element={
+              <Room>
+                <SearchPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/symbols"
+            element={
+              <Room>
+                <SymbolBrowserPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/riaf"
+            element={
+              <Room>
+                <RiafPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/cycle"
+            element={
+              <Room>
+                <CycleRunnerPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/domain"
+            element={
+              <Room>
+                <DomainBrowserPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/valueStream"
+            element={
+              <Room>
+                <ValueStreamPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/signals"
+            element={
+              <Room>
+                <CustomerSignalPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/bizvalue"
+            element={
+              <Room>
+                <BusinessValuePanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/release"
+            element={
+              <Room>
+                <ConsolidationPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="room/outcomes"
+            element={
+              <Room>
+                <OutcomeDashboardPanel />
+              </Room>
+            }
+          />
+          <Route
+            path="settings"
+            element={
+              <Room>
+                <SettingsPanel />
+              </Room>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </>
+  )
+}
+
+export function App() {
+  return (
+    <HashRouter>
+      <ToastProvider>
+        <PeekProvider>
+          <AppRoutes />
+        </PeekProvider>
+      </ToastProvider>
+    </HashRouter>
   )
 }

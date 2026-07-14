@@ -148,6 +148,28 @@ export const IPC = {
   AEP_GET_CALIBRATION: 'aep:getCalibration',
   AEP_GET_GOLDEN_THREAD: 'aep:getGoldenThread',
   AEP_DOMAIN_FIS: 'aep:domainFIS',
+
+  // Cycle Runner
+  CYCLE_START: 'cycle:start',
+  CYCLE_LIST: 'cycle:list',
+  CYCLE_GET: 'cycle:get',
+  CYCLE_TIMELINE: 'cycle:timeline',
+  CYCLE_ADVANCE: 'cycle:advance',
+  CYCLE_ABORT: 'cycle:abort',
+  CYCLE_PORTFOLIO_GATE: 'cycle:portfolioGate',
+  CYCLE_SIGN_RELEASE: 'cycle:signRelease',
+  CYCLE_SIMULATE_SIGNALS: 'cycle:simulateSignals',
+  CYCLE_SIMULATE_CI: 'cycle:simulateCI',
+  CYCLE_SIMULATE_KPI: 'cycle:simulateKpi',
+  CYCLE_UPDATE: 'cycle:update',
+  CYCLE_PROGRESS: 'cycle:progress',
+
+  // Journey UX read-models
+  UX_GET_JOURNEY_BOARD: 'ux:getJourneyBoard',
+  UX_GET_FEATURE_STORY: 'ux:getFeatureStory',
+  UX_GET_ACTIONS: 'ux:getActions',
+  UX_GET_GRAPH_NODE: 'ux:getGraphNode',
+  UX_GET_HOME_STATS: 'ux:getHomeStats',
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
