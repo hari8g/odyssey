@@ -1,0 +1,169 @@
+name: staas
+version: "1.0.0"
+domain: Storage-as-a-Service
+
+contexts:
+  - name: Object Storage
+    description: >
+      Core object-store subsystem: bucket lifecycle, object PUT/GET/DELETE,
+      versioning, and metadata management.
+    filePaths:
+      - src/storage/*
+      - src/objects/*
+
+  - name: Access Control
+    description: >
+      IAM-style access key management, bucket policies, and CORS configuration.
+    filePaths:
+      - src/iam/*
+      - src/access/*
+
+  - name: Data Plane
+    description: >
+      High-throughput data ingress/egress pipeline: multipart upload,
+      pre-signed URLs, and CDN edge caching.
+    filePaths:
+      - src/dataplane/*
+      - src/cdn/*
+
+concepts:
+  - name: Bucket
+    definition: >
+      A named, globally-unique namespace that acts as a top-level container
+      for Objects within a Storage-as-a-Service account.
+    synonyms:
+      - container
+      - namespace
+    context: Object Storage
+
+  - name: Object
+    definition: >
+      An arbitrary blob of binary data stored within a Bucket, identified by
+      a key and accompanied by user-defined metadata and a content-type.
+    synonyms:
+      - blob
+      - file
+      - asset
+    context: Object Storage
+
+  - name: AccessKey
+    definition: >
+      A credential pair (access key ID + secret) used by clients to authenticate
+      API requests against the storage service using HMAC-SHA256 signing.
+    synonyms:
+      - API key
+      - credential
+      - HMAC key
+    context: Access Control
+
+  - name: Pre-Signed URL
+    definition: >
+      A time-limited URL that embeds an access credential in its query string,
+      allowing unauthenticated HTTP clients to GET or PUT a specific Object.
+    synonyms:
+      - signed URL
+      - temporary URL
+    context: Data Plane
+
+  - name: Versioning
+    definition: >
+      Bucket-level feature that preserves prior versions of an Object whenever
+      it is overwritten or deleted, enabling point-in-time recovery.
+    synonyms:
+      - object versioning
+    context: Object Storage
+
+  - name: Multipart Upload
+    definition: >
+      A protocol for uploading large Objects in parallel chunks that are
+      assembled server-side into a single Object upon completion.
+    synonyms:
+      - chunked upload
+      - MPU
+    context: Data Plane
+
+kpis:
+  - name: Storage Durability
+    description: >
+      Annual probability that a stored Object is NOT lost due to hardware
+      failure or software error, expressed as nines (e.g. 99.999999999%).
+    unit: "nines"
+    measurementWindow: yearly
+    telemetrySource: storage.durability
+    target: 11
+    owner: Engineering
+
+  - name: API Request Latency P99
+    description: >
+      99th-percentile end-to-end latency for GET Object API requests measured
+      at the storage service ingress.
+    unit: ms
+    measurementWindow: rolling_5m
+    telemetrySource: dataplane.latency
+    baseline: 120
+    target: 50
+    owner: Engineering
+
+  - name: Storage Utilisation
+    description: >
+      Total compressed bytes stored across all Buckets in the service, used
+      for capacity planning and billing.
+    unit: TB
+    measurementWindow: daily
+    telemetrySource: storage.bytes
+    owner: Operations
+
+rules:
+  - id: STAAS-R001
+    name: Bucket Name Uniqueness
+    statement: >
+      Bucket names must be globally unique across all tenants, between 3 and
+      63 characters, consist only of lowercase letters, digits, and hyphens,
+      and must not start or end with a hyphen.
+    context: Object Storage
+
+  - id: STAAS-R002
+    name: AccessKey Rotation Policy
+    statement: >
+      Access keys must not remain active for more than 365 days. The service
+      must notify the owning account 30 days before expiry and revoke the key
+      automatically upon expiry.
+    context: Access Control
+
+  - id: STAAS-R003
+    name: Pre-Signed URL TTL Limit
+    statement: >
+      Pre-Signed URLs must have a maximum TTL of 7 days. Any request to
+      generate a Pre-Signed URL with a longer TTL must be rejected with HTTP 400.
+    context: Data Plane
+
+events:
+  - name: BucketCreated
+    description: Fired when a Tenant successfully provisions a new Bucket.
+
+  - name: ObjectUploaded
+    description: Fired when an Object PUT (single or multipart) is committed to storage.
+
+  - name: ObjectDeleted
+    description: Fired when an Object or a specific version is deleted from a Bucket.
+
+  - name: AccessKeyRevoked
+    description: Fired when an AccessKey is revoked manually or automatically upon expiry.
+
+  - name: MultipartUploadInitiated
+    description: Fired when a client starts a multipart upload session for a large Object.
+
+  - name: MultipartUploadCompleted
+    description: Fired when all parts are assembled and the final Object is committed.
+
+regulations:
+  - id: REG-ISO27001
+    name: ISO 27001
+    body: >
+      All stored data must be encrypted at rest using AES-256 or equivalent.
+      Access control configurations must be audited quarterly. Security events
+      must be logged and retained for a minimum of 12 months.
+    applies_to:
+      - src/storage/*
+      - src/iam/*
+      - src/access/*

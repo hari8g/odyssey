@@ -1,0 +1,9 @@
+node_modules/
+out/
+dist/
+.riaf/
+*.node
+.DS_Store
+*.log
+.vite/
+coverage/

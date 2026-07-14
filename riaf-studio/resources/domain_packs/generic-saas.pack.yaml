@@ -1,0 +1,110 @@
+name: generic-saas
+version: "1.0.0"
+domain: Generic Software-as-a-Service Platform
+
+contexts:
+  - name: Identity
+    description: Authentication, authorisation, and user profile management.
+    filePaths:
+      - src/auth/*
+      - src/identity/*
+
+  - name: Billing
+    description: Subscription lifecycle, plan management, invoicing, and payment processing.
+    filePaths:
+      - src/billing/*
+      - src/subscription/*
+
+  - name: Core Product
+    description: The primary value-delivering feature set of the SaaS application.
+    filePaths:
+      - src/app/*
+      - src/features/*
+
+concepts:
+  - name: User
+    definition: >
+      An authenticated individual who has registered for an account and
+      interacts with the platform on behalf of themselves or a Tenant.
+    synonyms:
+      - member
+      - account holder
+    context: Identity
+
+  - name: Tenant
+    definition: >
+      An organisational entity (company, team, or individual workspace) that
+      groups Users, owns a Subscription, and isolates data within the platform.
+    synonyms:
+      - organisation
+      - workspace
+      - account
+    context: Billing
+
+  - name: Subscription
+    definition: >
+      A recurring commercial agreement between a Tenant and the platform,
+      specifying the Plan, billing cycle, seat count, and entitlements.
+    synonyms:
+      - plan
+      - licence
+    context: Billing
+
+  - name: Seat
+    definition: >
+      A single licensed User slot within a Tenant's Subscription that grants
+      access to the product for one named or concurrent user.
+    synonyms:
+      - licence seat
+      - named user
+    context: Billing
+
+  - name: Entitlement
+    definition: >
+      A specific feature or usage quota that is unlocked for a Tenant based
+      on their active Subscription plan.
+    synonyms:
+      - feature flag
+      - quota
+    context: Core Product
+
+kpis:
+  - name: Monthly Recurring Revenue
+    description: Total predictable revenue normalised to a one-month period from all active Subscriptions.
+    unit: USD
+    measurementWindow: monthly
+    telemetrySource: billing.mrr
+    target: null
+    owner: Finance
+
+rules:
+  - id: SAAS-R001
+    name: Trial Grace Period
+    statement: >
+      A Tenant whose trial Subscription has expired is granted a 72-hour grace
+      period with read-only access before data export and account suspension.
+    context: Billing
+
+events:
+  - name: UserSignedUp
+    description: Fired when a new User completes the registration flow and verifies their email.
+
+  - name: SubscriptionCreated
+    description: Fired when a Tenant activates a new paid or trial Subscription.
+
+  - name: SubscriptionCancelled
+    description: Fired when a Tenant cancels their Subscription, initiating the end-of-term workflow.
+
+  - name: SeatLimitReached
+    description: Fired when a Tenant attempts to invite a User but the Subscription seat count is exhausted.
+
+regulations:
+  - id: REG-GDPR
+    name: GDPR
+    body: >
+      Personal data of EU residents must be processed lawfully, stored only as
+      long as necessary for the stated purpose, and must be erasable upon request
+      (right to erasure / right to be forgotten).
+    applies_to:
+      - src/identity/*
+      - src/auth/*

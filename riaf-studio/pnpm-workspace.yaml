@@ -1,0 +1,11 @@
+packages:
+  - 'packages/*'
+
+# pnpm 9: only these packages may run install scripts.
+# better-sqlite3 is handled via postinstall prebuild-install (avoid node-gyp).
+onlyBuiltDependencies:
+  - electron
+  - electron-winstaller
+  - esbuild
+  - fs-xattr
+  - macos-alias

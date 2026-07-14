@@ -1,0 +1,8 @@
+{
+  "name": "@riaf-studio/preload",
+  "version": "0.1.0",
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.0",
+    "@riaf-studio/shared": "workspace:*"
+  }
+}

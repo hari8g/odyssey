@@ -1,0 +1,299 @@
+name: mlff-tolling
+version: "1.0.0"
+domain: Multi-Lane Free-Flow Electronic Tolling
+
+contexts:
+  - name: Vehicle Detection
+    description: >
+      Subsystem responsible for detecting vehicles passing through a tolling
+      gantry using inductive loops, laser scanners, and video-based AVC/AVC+
+      classification algorithms.
+    filePaths:
+      - src/detection/*
+      - packages/*/src/detection/*
+
+  - name: Transaction Processing
+    description: >
+      Core tolling engine that creates toll transactions from raw detection
+      events, applies tariff rules, and posts charges to account ledgers.
+    filePaths:
+      - src/transaction/*
+      - packages/*/src/transaction/*
+
+  - name: Violation Enforcement
+    description: >
+      Handles unpaid or unresolvable toll transactions: image review, notice
+      issuance, DMV look-up, debt collection escalation.
+    filePaths:
+      - src/enforcement/*
+      - packages/*/src/enforcement/*
+
+  - name: Account Management
+    description: >
+      Customer-facing subsystem for prepaid accounts, transponder management,
+      auto-replenishment, and linked vehicle registration.
+    filePaths:
+      - src/accounts/*
+      - packages/*/src/accounts/*
+
+  - name: Interoperability Hub
+    description: >
+      Manages ANPR image exchange and financial clearing with peer agencies
+      via the NCHRP 20-24 / 6C interop protocol.
+    filePaths:
+      - src/interop/*
+      - packages/*/src/interop/*
+
+concepts:
+  - name: Transponder
+    definition: >
+      An OBU (On-Board Unit) affixed to a vehicle that communicates via DSRC
+      or 5.9 GHz RFID with roadside equipment to identify the vehicle for
+      electronic toll collection.
+    synonyms:
+      - OBU
+      - tag
+      - ETC tag
+    context: Account Management
+
+  - name: Toll Transaction
+    definition: >
+      A record created when a vehicle is detected at a gantry; captures axle
+      count, vehicle class, timestamp, lane, and assessed toll amount.
+    synonyms:
+      - transaction
+      - toll event
+    context: Transaction Processing
+
+  - name: ANPR
+    definition: >
+      Automatic Number Plate Recognition — OCR system that reads licence
+      plates from gantry cameras to identify vehicles without a transponder.
+    synonyms:
+      - licence plate recognition
+      - LPR
+      - ALPR
+    context: Vehicle Detection
+
+  - name: Vehicle Classification
+    definition: >
+      The process of categorising a detected vehicle into a tariff class
+      (e.g. 2-axle, 3-axle, heavy goods) using axle sensors and AVC video.
+    synonyms:
+      - AVC
+      - axle classification
+    context: Vehicle Detection
+
+  - name: Violation
+    definition: >
+      A toll transaction where neither a valid transponder read nor a
+      legible licence plate was obtained, or where the account balance
+      was insufficient to cover the assessed toll.
+    synonyms:
+      - infringement
+      - unpaid toll
+    context: Violation Enforcement
+
+  - name: Back-Office System
+    definition: >
+      Server-side platform that processes raw gantry data, manages accounts,
+      generates invoices, and interfaces with payment gateways and DMV.
+    synonyms:
+      - BOS
+      - back office
+    context: Transaction Processing
+
+  - name: Interoperability Clearing
+    definition: >
+      Financial reconciliation process between toll agencies that allows a
+      transponder issued by agency A to pay tolls on roads operated by agency B.
+    synonyms:
+      - interop clearing
+      - 6C clearing
+    context: Interoperability Hub
+
+  - name: Gantry
+    definition: >
+      A portal structure spanning one or more lanes of a roadway that
+      carries tolling antennas, cameras, and classification sensors.
+    synonyms:
+      - tolling point
+      - overhead gantry
+      - reader
+    context: Vehicle Detection
+
+  - name: Image Review
+    definition: >
+      Manual or AI-assisted inspection of ANPR images to confirm or correct
+      the plate read before a violation notice is issued.
+    synonyms:
+      - manual review
+      - plate review
+    context: Violation Enforcement
+
+  - name: Auto-Replenishment
+    definition: >
+      Automatic top-up of a prepaid transponder account when the balance
+      falls below a defined threshold, charged to a stored payment method.
+    synonyms:
+      - auto-reload
+      - auto top-up
+    context: Account Management
+
+rules:
+  - id: MLFF-R001
+    name: Minimum Account Balance
+    statement: >
+      A prepaid account must maintain a balance equal to or greater than the
+      maximum single-gantry toll for the highest vehicle class, to allow
+      successful passage without immediate violation.
+    context: Account Management
+
+  - id: MLFF-R002
+    name: Transaction Window
+    statement: >
+      All raw gantry events belonging to the same vehicle pass-through must
+      be correlated into a single toll transaction within 500 ms of the last
+      sensor pulse.
+    context: Transaction Processing
+
+  - id: MLFF-R003
+    name: Violation Notice Deadline
+    statement: >
+      A violation notice must be issued to the registered vehicle owner within
+      30 calendar days of the unpaid toll transaction date.
+    context: Violation Enforcement
+    regulation: Privacy Act
+
+  - id: MLFF-R004
+    name: Interop Image Retention
+    statement: >
+      ANPR images shared with peer agencies via the interoperability hub must
+      be retained for a minimum of 3 years and must be encrypted at rest.
+    context: Interoperability Hub
+    regulation: Data Retention Policy
+
+kpis:
+  - name: Transaction Success Rate
+    description: >
+      Percentage of detected vehicle passages that result in a successfully
+      assessed and collected toll transaction (transponder read + payment or
+      valid licence-plate invoice issued).
+    unit: "%"
+    measurementWindow: rolling_24h
+    telemetrySource: bos.transactions
+    baseline: 97.5
+    target: 99.5
+    owner: Operations
+
+  - name: ANPR Read Rate
+    description: >
+      Percentage of vehicles without a transponder for which a legible
+      licence plate image is successfully captured and OCR'd.
+    unit: "%"
+    measurementWindow: rolling_24h
+    telemetrySource: bos.detection
+    baseline: 85.0
+    target: 95.0
+    owner: Operations
+
+  - name: Violation Rate
+    description: >
+      Percentage of total detected vehicle passages that result in a violation
+      (no transponder AND no legible plate, or insufficient balance).
+    unit: "%"
+    measurementWindow: rolling_7d
+    telemetrySource: bos.violations
+    baseline: 4.0
+    target: 1.5
+    owner: Revenue Assurance
+
+  - name: Transaction Processing Latency
+    description: >
+      95th-percentile time from raw gantry event ingestion to toll transaction
+      record committed in the back-office database.
+    unit: ms
+    measurementWindow: rolling_1h
+    telemetrySource: bos.latency
+    baseline: 800
+    target: 300
+    owner: Engineering
+
+  - name: Interop Clearing Cycle Time
+    description: >
+      Time from end-of-day submission to confirmed financial settlement with
+      all peer agencies in the interoperability network.
+    unit: hours
+    measurementWindow: daily
+    telemetrySource: interop.clearing
+    baseline: 48
+    target: 24
+    owner: Finance
+
+events:
+  - name: VehicleDetected
+    description: >
+      Fired when a gantry sensor loop or laser scanner registers a vehicle
+      entry pulse, initiating a new transaction candidate.
+
+  - name: TransponderRead
+    description: >
+      Fired when a DSRC reader successfully decodes a transponder's account
+      identifier during a vehicle's passage.
+
+  - name: PlateImageCaptured
+    description: >
+      Fired when the ANPR camera captures an image for OCR processing;
+      may accompany a transponder read or occur independently.
+
+  - name: TollTransactionCreated
+    description: >
+      Fired when the back-office correlates sensor events into a complete
+      toll transaction and commits it to the ledger.
+
+  - name: ViolationTriggered
+    description: >
+      Fired when a toll transaction cannot be resolved to a valid payment
+      method, escalating it to the enforcement workflow.
+
+  - name: ViolationNoticeIssued
+    description: >
+      Fired when a formal violation notice is dispatched to the registered
+      vehicle owner.
+
+  - name: InteropClearingSubmitted
+    description: >
+      Fired at end-of-day when the financial clearing batch is transmitted
+      to the interoperability clearing house.
+
+regulations:
+  - id: REG-PRIVACY
+    name: Privacy Act
+    body: >
+      Personally identifiable information (PII) — including vehicle registration,
+      account holder name, address, and payment details — must be collected only
+      for the purpose of toll administration and may not be disclosed to third
+      parties except as required by law or for debt-collection purposes.
+    applies_to:
+      - src/enforcement/*
+      - src/accounts/*
+
+  - id: REG-DATA-RETENTION
+    name: Data Retention Policy
+    body: >
+      Toll transaction records, ANPR images, and account statements must be
+      retained for a minimum of 7 years to satisfy statutory audit requirements.
+      Images used solely for interoperability must be retained for 3 years.
+    applies_to:
+      - src/transaction/*
+      - src/interop/*
+
+  - id: REG-PCI-DSS
+    name: PCI-DSS
+    body: >
+      Payment card data must be processed, stored, and transmitted in compliance
+      with PCI-DSS v4.0. Raw card numbers must never be stored after authorisation;
+      only truncated PANs and tokens are retained.
+    applies_to:
+      - src/accounts/*
+      - src/payment/*

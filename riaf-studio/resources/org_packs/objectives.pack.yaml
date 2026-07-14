@@ -1,0 +1,89 @@
+# Sample Org Pack — business objectives, org units, investments, and stakeholder roles.
+# Drop this file (or any *.pack.yaml) in your workspace's .riaf/org_packs/ directory
+# and load it via the Customer Signals panel → AEP Load Org Packs.
+
+name: sample-objectives
+version: "1.0.0"
+
+org_units:
+  - label: Product
+    description: Core product team responsible for feature development
+    type: product
+  - label: Engineering
+    description: Software engineering and platform team
+    type: engineering
+  - label: Marketing
+    description: Go-to-market, demand generation, and brand
+    type: marketing
+  - label: Customer Success
+    description: Post-sales onboarding, retention, and expansion
+    type: customer_success
+  - label: Sales
+    description: New business acquisition and account growth
+    type: sales
+
+business_objectives:
+  - label: Grow ARR 30% YoY
+    description: Increase Annual Recurring Revenue from new and existing customers
+    owner: Sales
+    priority: critical
+  - label: Reduce Churn to <5%
+    description: Improve product stickiness and customer satisfaction to lower churn rate
+    owner: Customer Success
+    priority: critical
+  - label: Improve Activation Rate
+    description: Get more users to their "aha moment" within the first 7 days
+    owner: Product
+    priority: high
+  - label: Reduce Time-to-Value
+    description: Shorten the time between signup and first meaningful outcome for customers
+    owner: Product
+    priority: high
+  - label: Expand Enterprise Segment
+    description: Grow enterprise tier ACV through targeted features and compliance readiness
+    owner: Sales
+    priority: high
+  - label: Improve Developer Experience
+    description: Reduce friction for developers building on the platform
+    owner: Engineering
+    priority: medium
+
+investments:
+  - label: Platform Reliability
+    description: Improve uptime, reduce P0/P1 incidents, and automate runbooks
+    budget_band: medium
+    aligned_objective: Reduce Churn to <5%
+  - label: Onboarding Revamp
+    description: Redesign first-run experience with guided setup wizard
+    budget_band: high
+    aligned_objective: Improve Activation Rate
+  - label: Enterprise SSO & Compliance
+    description: SAML SSO, SOC 2 Type II, audit logs for enterprise buyers
+    budget_band: high
+    aligned_objective: Expand Enterprise Segment
+  - label: API Rate Limit Improvements
+    description: Increase throughput limits and add webhook retry logic
+    budget_band: low
+    aligned_objective: Improve Developer Experience
+
+stakeholder_roles:
+  - role: Product Manager
+    org_unit: Product
+    responsibilities:
+      - Owns feature roadmap and prioritization
+      - Accountable for AEP upstream decisions (A1–A5)
+  - role: Engineering Lead
+    org_unit: Engineering
+    responsibilities:
+      - Approves blast radius and release readiness
+      - Required signoff for CONSOLIDATE → RELEASE transitions
+  - role: Head of Customer Success
+    org_unit: Customer Success
+    responsibilities:
+      - Validates customer signal quality
+      - Approves OBSERVE → LEARN transitions
+  - role: CFO
+    org_unit: Sales
+    responsibilities:
+      - Final approver for investments above $500k budget band
+      - Required for enterprise pricing changes

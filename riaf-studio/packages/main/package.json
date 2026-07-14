@@ -1,0 +1,19 @@
+{
+  "name": "@riaf-studio/main",
+  "version": "0.1.0",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.27.0",
+    "@electron-toolkit/utils": "^3.0.0",
+    "@riaf-studio/shared": "workspace:*",
+    "better-sqlite3": "^11.0.0",
+    "chokidar": "^4.0.0",
+    "electron-store": "^10.0.0",
+    "fast-glob": "^3.3.0",
+    "ignore": "^6.0.0",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^22.0.0"
+  }
+}
