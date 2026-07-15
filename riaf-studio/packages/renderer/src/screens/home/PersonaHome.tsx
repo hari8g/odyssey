@@ -3,6 +3,25 @@ import { useNavigate } from 'react-router-dom'
 import { Card, StatTile, Button, EmptyState } from '@/design/primitives'
 import { useUXStore, type Role } from '@/store/ux/ux.store'
 
+/** Where an INFORMS target routes to — mirrors the mapping used in Learn Hub. */
+function informsRoute(target: string): string {
+  if (/^Pain point:/i.test(target)) return '/room/signals'
+  if (/^Business objective/i.test(target)) return '/journey?verb=DECIDE'
+  if (/A2|fleet estimates/i.test(target)) return '/room/bizvalue'
+  if (/^Hypothesis:/i.test(target)) return '/room/bizvalue'
+  return '/room/learn'
+}
+
+function parseLessonTargets(description: string | null): string[] {
+  if (!description) return []
+  try {
+    const d = JSON.parse(description) as { targets?: string[] }
+    return Array.isArray(d.targets) ? d.targets : []
+  } catch {
+    return []
+  }
+}
+
 type HomeWidget =
   | 'actionsPreview'
   | 'journeyMini'
@@ -183,16 +202,46 @@ function Widget({ id }: { id: HomeWidget }) {
     case 'learningsFeed':
       return (
         <Card className="p-4">
-          <p className="text-[11px] font-[600] text-ink-3 uppercase tracking-wide mb-3">Latest lessons</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[11px] font-[600] text-ink-3 uppercase tracking-wide">
+              What we learned last cycle
+            </p>
+            <Button variant="ghost" onClick={() => navigate('/room/learn')}>
+              See all lessons →
+            </Button>
+          </div>
           {learnings.length === 0 ? (
-            <p className="text-[13px] text-ink-3">Lessons appear after LEARN completes.</p>
+            <p className="text-[13px] text-ink-3">Complete your first cycle to see lessons here.</p>
           ) : (
-            <ul className="space-y-2">
-              {learnings.slice(0, 4).map((l) => (
-                <li key={l.id} className="text-[13px] text-ink-1">
-                  💡 {l.label}
-                </li>
-              ))}
+            <ul className="space-y-3">
+              {learnings.slice(0, 3).map((l) => {
+                const targets = parseLessonTargets(l.description)
+                return (
+                  <li key={l.id}>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/room/learn')}
+                      className="text-[13px] text-ink-1 hover:text-accent text-left"
+                    >
+                      💡 {l.label}
+                    </button>
+                    {targets.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {targets.map((tgt, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => navigate(informsRoute(tgt))}
+                            className="text-[10px] bg-surface-3 border border-line rounded-[4px] px-2 py-0.5 text-ink-3 hover:text-ink-1 hover:border-line-strong transition-colors"
+                          >
+                            informs: {tgt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           )}
         </Card>

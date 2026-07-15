@@ -64,7 +64,15 @@ export default {
         gate: '0 0 0 3px #E8A13C44',
       },
       transitionDuration: { fast: '150ms', base: '200ms', slow: '250ms' },
+      animation: {
+        'spin-slow': 'spin 3s linear infinite',
+      },
     },
   },
-  plugins: [],
+  plugins: [
+    function reducedMotion({ addVariant }) {
+      addVariant('motion-safe', '@media (prefers-reduced-motion: no-preference)')
+      addVariant('motion-reduce', '@media (prefers-reduced-motion: reduce)')
+    },
+  ],
 }

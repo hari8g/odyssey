@@ -102,6 +102,7 @@ export const IPC = {
   DOMAIN_GET_CONTEXTS: 'domain:getContexts',
   DOMAIN_GET_REGULATIONS: 'domain:getRegulations',
   DOMAIN_GET_CONCEPTS: 'domain:getConcepts',
+  DOMAIN_GET_RULES: 'domain:getRules',
   DOMAIN_RUN_PASS_D: 'domain:runPassD',
 
   // AEP: Pass progress
@@ -115,6 +116,7 @@ export const IPC = {
   AEP_INGEST_SIGNALS: 'aep:ingestSignals',
   AEP_CLUSTER_PAIN_POINTS: 'aep:clusterPainPoints',
   AEP_GET_PAIN_POINTS: 'aep:getPainPoints',
+  AEP_GET_PAIN_POINT_SIGNALS: 'aep:getPainPointSignals',
   AEP_LOAD_ORG_PACKS: 'aep:loadOrgPacks',
   AEP_RUN_A1: 'aep:runA1',
   AEP_RUN_A2: 'aep:runA2',
@@ -147,7 +149,12 @@ export const IPC = {
   AEP_GET_APPROVAL_SET: 'aep:getApprovalSet',
   AEP_GET_CALIBRATION: 'aep:getCalibration',
   AEP_GET_GOLDEN_THREAD: 'aep:getGoldenThread',
+  AEP_GET_LEARNINGS: 'aep:getLearnings',
+  AEP_GET_OUTCOMES: 'aep:getOutcomes',
   AEP_DOMAIN_FIS: 'aep:domainFIS',
+
+  // Domain extras
+  DOMAIN_GET_CONTEXT_FILES: 'domain:getContextFiles',
 
   // Cycle Runner
   CYCLE_START: 'cycle:start',

@@ -139,6 +139,18 @@ function getGoldenThread(db: Database.Database, featureId: number): GoldenThread
     .prepare(`SELECT id, label FROM graph_nodes WHERE kind = 'LEARNING' ORDER BY id DESC LIMIT 20`)
     .all() as { id: number; label: string }[]
 
+  const orgImpacts = db
+    .prepare(
+      `SELECT DISTINCT ia.id, ia.description, ou.label as orgUnitLabel
+       FROM graph_nodes ia
+       JOIN graph_edges ef ON ef.from_node_id = ia.id AND ef.to_node_id = ? AND ef.kind = 'ASSESSED_FOR'
+       JOIN graph_edges eo ON eo.from_node_id = ia.id AND eo.kind = 'ASSESSED_FOR'
+       JOIN graph_nodes ou ON ou.id = eo.to_node_id AND ou.kind = 'ORG_UNIT'
+       WHERE ia.kind = 'IMPACT_ASSESSMENT'
+       ORDER BY ia.id DESC LIMIT 20`,
+    )
+    .all(featureId) as { id: number; description: string | null; orgUnitLabel: string }[]
+
   return {
     featureId: feature.id,
     featureLabel: feature.label,
@@ -150,6 +162,11 @@ function getGoldenThread(db: Database.Database, featureId: number): GoldenThread
     deployments,
     verdicts,
     learnings,
+    orgImpacts: orgImpacts.map((r) => ({
+      id: r.id,
+      orgUnitLabel: r.orgUnitLabel,
+      summary: r.description ?? '',
+    })),
   }
 }
 
@@ -242,12 +259,57 @@ export function registerAepIpcHandlers(accessors: WorkspaceAccessors): void {
     if (!db) return []
     return db
       .prepare(
-        `SELECT id, label, description FROM graph_nodes
+        `SELECT id, label, description, kind FROM graph_nodes
          WHERE kind IN ('DOMAIN_CONCEPT','GLOSSARY_TERM') ORDER BY kind, label`,
       )
       .all()
   })
 
+  ipcMain.handle(IPC.DOMAIN_GET_RULES, () => {
+    const db = accessors.getDb()
+    if (!db) return []
+    return db
+      .prepare(
+        `SELECT gn.id, gn.label, gn.description,
+                (SELECT COUNT(*) FROM graph_edges ge
+                 JOIN graph_nodes tc ON tc.id = ge.to_node_id
+                 WHERE ge.from_node_id = gn.id AND ge.kind = 'ENFORCES'
+                   AND tc.kind IN ('TEST_CASE','TEST_SUITE')) as enforces_count,
+                (SELECT ctx.label FROM graph_edges ge2
+                 JOIN graph_nodes ctx ON ctx.id = ge2.to_node_id
+                 WHERE ge2.from_node_id = gn.id AND ge2.kind = 'BELONGS_TO_CONTEXT'
+                 LIMIT 1) as context_label
+         FROM graph_nodes gn
+         WHERE gn.kind = 'BUSINESS_RULE'
+         ORDER BY gn.label`,
+      )
+      .all()
+  })
+
+  ipcMain.handle(
+    IPC.DOMAIN_GET_CONTEXT_FILES,
+    (_e, opts?: { contextId?: number; regulationId?: number }) => {
+      const db = accessors.getDb()
+      if (!db) return []
+      const nodeId = opts?.regulationId ?? opts?.contextId
+      if (nodeId == null) return []
+      // Files governed by a regulation, or ABOUT a bounded context
+      return db
+        .prepare(
+          `
+        SELECT DISTINCT gn.id, gn.label, gn.file_path, gn.kind
+        FROM graph_edges ge
+        JOIN graph_nodes gn ON gn.id = ge.from_node_id
+        WHERE ge.to_node_id = ?
+          AND ge.kind IN ('GOVERNED_BY','ABOUT','BELONGS_TO')
+          AND gn.file_path IS NOT NULL
+        ORDER BY gn.file_path
+        LIMIT 100
+      `,
+        )
+        .all(nodeId)
+    },
+  )
   // ── Upstream ───────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC.AEP_LOAD_ORG_PACKS, async (_e, { packPaths }: { packPaths: string[] }) => {
@@ -343,6 +405,23 @@ export function registerAepIpcHandlers(accessors: WorkspaceAccessors): void {
       .all()
   })
 
+  ipcMain.handle(
+    IPC.AEP_GET_PAIN_POINT_SIGNALS,
+    (_e, { painPointId, limit }: { painPointId: number; limit?: number }) => {
+      const db = accessors.getDb()
+      if (!db) return []
+      return db
+        .prepare(
+          `SELECT cs.id, cs.label, cs.description
+           FROM graph_nodes cs
+           JOIN graph_edges ge ON ge.from_node_id = cs.id AND ge.kind = 'EXPRESSES'
+           WHERE ge.to_node_id = ? AND cs.kind = 'CUSTOMER_SIGNAL'
+           ORDER BY cs.id DESC LIMIT ?`,
+        )
+        .all(painPointId, Math.max(1, Math.min(20, limit ?? 5)))
+    },
+  )
+
   ipcMain.handle(IPC.AEP_RUN_A1, async (_e, { painPointIds }: { painPointIds: number[] }) => {
     try {
       const { db } = requireCtx(accessors)
@@ -407,10 +486,29 @@ export function registerAepIpcHandlers(accessors: WorkspaceAccessors): void {
     }
   })
 
-  ipcMain.handle(IPC.AEP_GET_HYPOTHESES, () => {
+  ipcMain.handle(IPC.AEP_GET_HYPOTHESES, (_e, opts?: { featureId?: number; includeDrafts?: boolean }) => {
     const db = accessors.getDb()
     if (!db) return []
-    return new HypothesisRegistry(db).getPortfolio()
+    const reg = new HypothesisRegistry(db)
+    if (opts?.includeDrafts && opts.featureId != null) {
+      return reg.getDrafts(opts.featureId).map((d) => ({
+        hypothesisNodeId: d.hypothesisNodeId,
+        id: d.hypothesisNodeId,
+        label: d.label,
+        kpiLabel: d.kpiLabel,
+        kpi: d.kpiLabel,
+        priorConfidence: d.priorConfidence,
+        priorConf: d.priorConfidence,
+        verdict: null,
+        draft: true,
+      }))
+    }
+    return reg.getPortfolio(opts?.featureId).map((h) => ({
+      ...h,
+      id: h.hypothesisNodeId,
+      kpi: h.kpiLabel,
+      priorConf: h.priorConfidence,
+    }))
   })
 
   ipcMain.handle(IPC.AEP_GET_VALUE_STREAM, () => {
@@ -718,6 +816,139 @@ export function registerAepIpcHandlers(accessors: WorkspaceAccessors): void {
     const db = accessors.getDb()
     if (!db) return { error: 'No workspace open' }
     return getGoldenThread(db, featureId)
+  })
+
+  ipcMain.handle(IPC.AEP_GET_LEARNINGS, () => {
+    try {
+      const db = accessors.getDb()
+      if (!db) return []
+      const rows = db
+        .prepare(
+          `
+        SELECT gn.id, gn.label, gn.description, gn.created_at,
+               (SELECT COUNT(*) FROM graph_edges ge
+                WHERE ge.from_node_id = gn.id AND ge.kind = 'INFORMS') as informs_count
+        FROM graph_nodes gn
+        WHERE gn.kind = 'LEARNING'
+        ORDER BY gn.created_at DESC
+        LIMIT 50
+      `,
+        )
+        .all() as Array<{
+        id: number
+        label: string
+        description: string | null
+        created_at: number
+        informs_count: number
+      }>
+      const informsStmt = db.prepare<[number], { id: number; label: string; kind: string }>(
+        `SELECT gn.id, gn.label, gn.kind
+         FROM graph_edges ge
+         JOIN graph_nodes gn ON gn.id = ge.to_node_id
+         WHERE ge.from_node_id = ? AND ge.kind = 'INFORMS'
+         ORDER BY gn.kind, gn.label
+         LIMIT 20`,
+      )
+      return rows.map((r) => {
+        let parsed: { adjustment?: string; targets?: string[]; featureId?: number } = {}
+        try {
+          parsed = r.description ? JSON.parse(r.description) : {}
+        } catch {
+          parsed = { adjustment: r.description ?? undefined, targets: [] }
+        }
+        const informs = informsStmt.all(r.id)
+        const painPointIds = informs.filter((t) => t.kind === 'PAIN_POINT').map((t) => t.id)
+        const targetLabels =
+          (parsed.targets?.length ?? 0) > 0
+            ? parsed.targets!
+            : informs.map((t) => t.label)
+        return {
+          id: r.id,
+          label: r.label,
+          description: r.description,
+          adjustment: parsed.adjustment ?? r.description,
+          targets: targetLabels,
+          featureId: parsed.featureId ?? null,
+          informs_count: r.informs_count,
+          informs,
+          painPointIds,
+          created_at: r.created_at,
+        }
+      })
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(IPC.AEP_GET_OUTCOMES, () => {
+    try {
+      const db = accessors.getDb()
+      if (!db) return []
+      const rows = db
+        .prepare(
+          `SELECT
+             vn.id                 AS id,
+             vn.label              AS verdictLabel,
+             vn.description        AS rationale,
+             vn.created_at         AS createdAt,
+             vh.magnitude_pct      AS magnitudePct,
+             vh.timeframe_days     AS timeframeDays,
+             vh.direction          AS direction,
+             vh.actual_delta_pct   AS actualDeltaPct,
+             vh.prior_confidence   AS priorConfidence,
+             vh.attribution_method AS attributionMethod,
+             kn.label              AS kpiLabel,
+             hf.from_node_id       AS featureId,
+             fn.label              AS featureLabel
+           FROM graph_nodes vn
+           JOIN value_hypotheses vh ON vh.verdict_node_id = vn.id
+           JOIN graph_nodes kn ON kn.id = vh.kpi_node_id
+           JOIN graph_edges hf ON hf.to_node_id = vh.hypothesis_node_id AND hf.kind = 'HAS_HYPOTHESIS'
+           JOIN graph_nodes fn ON fn.id = hf.from_node_id
+           WHERE vn.kind = 'HYPOTHESIS_VERDICT'
+           ORDER BY vn.created_at DESC
+           LIMIT 50`,
+        )
+        .all() as Array<{
+        id: number
+        verdictLabel: string
+        rationale: string | null
+        createdAt: number
+        magnitudePct: number
+        timeframeDays: number
+        direction: string
+        actualDeltaPct: number | null
+        priorConfidence: number
+        attributionMethod: string
+        kpiLabel: string
+        featureId: number
+        featureLabel: string
+      }>
+      return rows.map((r) => {
+        const match = /Verdict:\s*(VALIDATED|REFUTED|INCONCLUSIVE)/.exec(r.verdictLabel)
+        const verdict = (match ? match[1]!.toLowerCase() : 'inconclusive') as
+          | 'validated'
+          | 'refuted'
+          | 'inconclusive'
+        return {
+          id: r.id,
+          featureId: r.featureId,
+          featureLabel: r.featureLabel,
+          kpiLabel: r.kpiLabel,
+          direction: r.direction,
+          magnitudePct: r.magnitudePct,
+          timeframeDays: r.timeframeDays,
+          priorConfidence: r.priorConfidence,
+          attributionMethod: r.attributionMethod,
+          actualDeltaPct: r.actualDeltaPct,
+          verdict,
+          rationale: r.rationale,
+          createdAt: r.createdAt,
+        }
+      })
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   ipcMain.handle(IPC.AEP_DOMAIN_FIS, async (_e, { query, mode }: { query: string; mode?: string }) => {

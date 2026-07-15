@@ -162,6 +162,49 @@ export function registerUxReadModels(accessors: Accessors): void {
             .all((run as { id: number }).id) as unknown[])
         : []
 
+      const regulations = db
+        .prepare(
+          `
+        SELECT DISTINCT r.id, r.label FROM graph_nodes r
+        JOIN graph_edges ge ON ge.to_node_id = r.id AND ge.kind = 'GOVERNED_BY'
+        JOIN graph_nodes code ON code.id = ge.from_node_id
+        JOIN feature_traces ft ON ft.code_node_id = code.id
+        WHERE r.kind = 'REGULATION' AND ft.feature_node_id = ?
+        LIMIT 20
+      `,
+        )
+        .all(featureId) as { id: number; label: string }[]
+
+      const involvedRoles = db
+        .prepare(
+          `
+        SELECT DISTINCT gn.label FROM graph_nodes gn
+        JOIN graph_edges ge ON ge.to_node_id = gn.id
+        WHERE ge.from_node_id = ? AND gn.kind IN ('ROLE','ORG_UNIT')
+        LIMIT 20
+      `,
+        )
+        .all(featureId) as { label: string }[]
+
+      const code = db
+        .prepare(
+          `
+        SELECT gn.id, gn.label, gn.file_path, gn.sdlc_phase, gn.importance_score as fis
+        FROM feature_traces ft
+        JOIN graph_nodes gn ON gn.id = ft.code_node_id
+        WHERE ft.feature_node_id = ?
+        ORDER BY gn.importance_score DESC
+        LIMIT 8
+      `,
+        )
+        .all(featureId) as Array<{
+        id: number
+        label: string
+        file_path: string | null
+        sdlc_phase: string | null
+        fis: number
+      }>
+
       return {
         id: node.id,
         title: node.label,
@@ -173,6 +216,9 @@ export function registerUxReadModels(accessors: Accessors): void {
         bets,
         run,
         timeline,
+        regulations,
+        involvedRoles: involvedRoles.map((r) => r.label),
+        code,
       }
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) }

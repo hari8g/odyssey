@@ -96,7 +96,7 @@ function RoleSelector() {
 function JourneyBar() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { board, painPointCount } = useUXStore()
+  const { board, painPointCount, learnings } = useUXStore()
   const verbs: VerbKey[] = ['LISTEN', 'DECIDE', 'DEFINE', 'BUILD', 'SHIP', 'LEARN']
   const counts: Record<VerbKey, number> = {
     LISTEN: 0,
@@ -123,6 +123,14 @@ function JourneyBar() {
   })
   counts.LISTEN = Math.max(counts.LISTEN, painPointCount)
 
+  const learnCompleted =
+    learnings.length > 0 ||
+    board.some(
+      (item) =>
+        item.verb === 'LEARN' &&
+        (item.status === 'completed' || item.stage === 'DONE' || item.stage === 'LEARN'),
+    )
+
   return (
     <div className="flex items-center gap-1 overflow-x-auto">
       {verbs.map((verb) => (
@@ -131,6 +139,7 @@ function JourneyBar() {
           verb={verb}
           count={counts[verb]}
           needsAttention={needs[verb]}
+          loopClosed={verb === 'LEARN' && learnCompleted}
           active={location.search.includes(`verb=${verb}`) || location.pathname.includes(verb.toLowerCase())}
           onClick={() => navigate(`/journey?verb=${verb}`)}
         />

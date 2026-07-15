@@ -7,3 +7,9 @@ dist/
 *.log
 .vite/
 coverage/
+# Accidental tsc emit beside Vite sources (shadows .tsx and breaks Cycle Runner UI)
+packages/renderer/src/**/*.js
+packages/renderer/src/**/*.js.map
+packages/renderer/src/**/*.d.ts
+packages/renderer/src/**/*.d.ts.map
+!packages/renderer/src/vite-env.d.ts

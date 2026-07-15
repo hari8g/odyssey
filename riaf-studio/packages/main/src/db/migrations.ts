@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import { SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4 } from './schema'
+import { SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5 } from './schema'
 
 interface Migration {
   version: number
@@ -29,6 +29,12 @@ const MIGRATIONS: Migration[] = [
     version: 4,
     up: (db) => {
       db.exec(SCHEMA_V4)
+    },
+  },
+  {
+    version: 5,
+    up: (db) => {
+      db.exec(SCHEMA_V5)
     },
   },
 ]

@@ -46,15 +46,15 @@ export const STAGE_META: Record<CycleStage, { title: string; narrative: string }
     narrative: 'Signals are deduplicated into named, countable problems.',
   },
   INTAKE: {
-    title: 'A1 — intake brief',
+    title: 'Write the case for action',
     narrative: 'Pain points become a classified, deduplicated brief.',
   },
   QUALIFY: {
-    title: 'A2 ∥ A4 → A3 — assessments',
+    title: 'Size value and effort',
     narrative: 'Business value and engineering cost in parallel; GTM follows.',
   },
   PACKET: {
-    title: 'A5 — portfolio packet',
+    title: 'Assemble the decision packet',
     narrative: 'Evidence assembled for the human forum.',
   },
   PORTFOLIO_GATE: {
@@ -63,10 +63,10 @@ export const STAGE_META: Record<CycleStage, { title: string; narrative: string }
   },
   BUILD: {
     title: 'Define → build',
-    narrative: 'ISS plane work; CI results flow in via Pass F.',
+    narrative: 'Teams work; CI results flow in automatically.',
   },
   CONSOLIDATE: {
-    title: 'A10 — readiness',
+    title: 'Check release readiness',
     narrative: '4-scope blast radius and approval set.',
   },
   RELEASE_GATE: {
@@ -74,21 +74,53 @@ export const STAGE_META: Record<CycleStage, { title: string; narrative: string }
     narrative: 'Every role in the approval set signs.',
   },
   ROLLOUT: {
-    title: 'A11 — staged rollout',
-    narrative: 'Canary → gradual → full; A11 may halt, never widen.',
+    title: 'Staged rollout',
+    narrative: 'Canary → gradual → full; may halt, never widen.',
   },
   OBSERVE: {
     title: 'Observe',
     narrative: 'KPI observations accumulate over the timeframe.',
   },
   LEARN: {
-    title: 'Pass G — learn',
+    title: 'Judge the bet, keep the lesson',
     narrative: 'Verdicts, org impact, and learnings wired upstream.',
   },
   DONE: {
     title: '↺ Cycle complete',
     narrative: 'Start the next bet with better priors.',
   },
+}
+
+/** Plain-English agent names — never show A-codes in the UI. */
+export const AGENT_NAMES: Record<string, string> = {
+  a1_intake: 'Signal Analyst',
+  A1: 'Signal Analyst',
+  a2_business_impact: 'Value Estimator',
+  A2: 'Value Estimator',
+  a3_gtm: 'GTM Advisor',
+  A3: 'GTM Advisor',
+  a4_dev_impact: 'Engineering Estimator',
+  A4: 'Engineering Estimator',
+  a5_portfolio: 'Portfolio Advisor',
+  A5: 'Portfolio Advisor',
+  a10_consolidation: 'Release Checker',
+  A10: 'Release Checker',
+  a11_deployment: 'Rollout Controller',
+  A11: 'Rollout Controller',
+  a12_attribution: 'Verdict Analyst',
+  A12: 'Verdict Analyst',
+  a13_cross_functional: 'Impact Reporter',
+  A13: 'Impact Reporter',
+  a14_learning: 'Lesson Distiller',
+  A14: 'Lesson Distiller',
+  clusterer: 'Problem Clusterer',
+  'A2‖A4': 'Value + Engineering Estimators',
+  'A12→A13→A14': 'Verdict → Impact → Lessons',
+}
+
+export function agentName(id: string | null | undefined): string {
+  if (!id) return 'Agent'
+  return AGENT_NAMES[id] ?? id.replace(/^a\d+_/, '').replace(/_/g, ' ')
 }
 
 export const useCycleStore = create<CycleState>()(

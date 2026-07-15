@@ -18,11 +18,20 @@ import { HumanGateManager } from '../aep/governance/humanGateManager'
 import { BlastRadiusEngine } from '../aep/downstream/blastRadiusEngine'
 
 export class CycleOrchestrator {
+  /** Serialize advance() per run — concurrent advances race agent writes and leave Decide stages corrupt. */
+  private readonly advancing = new Map<number, Promise<void>>()
+
   constructor(
-    private readonly db: Database.Database,
-    private readonly win: BrowserWindow,
+    private db: Database.Database,
+    private win: BrowserWindow,
     private readonly getProvider: () => ILLMProvider,
   ) {}
+
+  /** Keep orchestrator pinned to the live workspace handles after reopen. */
+  rebind(db: Database.Database, win: BrowserWindow): void {
+    this.db = db
+    this.win = win
+  }
 
   startCycle(input: {
     label: string
@@ -48,7 +57,7 @@ export class CycleOrchestrator {
   resumeAll(): void {
     const open = this.db
       .prepare<[], { id: number }>(
-        `SELECT id FROM cycle_runs WHERE status IN ('running','waiting_external','waiting_gate')`,
+        `SELECT id FROM cycle_runs WHERE status IN ('running','waiting_external','waiting_gate','error')`,
       )
       .all()
     for (const { id } of open) void this.advance(id)
@@ -64,12 +73,39 @@ export class CycleOrchestrator {
   }
 
   async advance(runId: number): Promise<void> {
+    // Waiters (e.g. simulateSignals → advance) must re-enter after the in-flight
+    // run finishes — otherwise a concurrent advance drops progress and leaves
+    // the cycle stuck at WAIT stages like SIGNALS.
+    for (;;) {
+      const pending = this.advancing.get(runId)
+      if (pending) {
+        await pending
+        continue
+      }
+      const work = this.advanceExclusive(runId).finally(() => {
+        this.advancing.delete(runId)
+      })
+      this.advancing.set(runId, work)
+      await work
+      return
+    }
+  }
+
+  private async advanceExclusive(runId: number): Promise<void> {
     for (let guard = 0; guard < STAGES.length + 2; guard++) {
       const run = this.getRun(runId)
-      if (!run || ['completed', 'aborted', 'error'].includes(run.status)) return
+      if (!run || ['completed', 'aborted'].includes(run.status)) return
 
-      const def = stageById(run.current_stage)
-      const exit = def.exit(this.db, run)
+      // Retry path: Clear terminal agent errors so Advance / resume works.
+      if (run.status === 'error') {
+        this.setStatus(runId, 'running')
+      }
+
+      const fresh = this.getRun(runId)
+      if (!fresh) return
+
+      const def = stageById(fresh.current_stage)
+      const exit = def.exit(this.db, fresh)
 
       if (exit.ok) {
         if (def.kind === 'TERMINAL' || !def.next) {
@@ -78,8 +114,8 @@ export class CycleOrchestrator {
           return
         }
         // Capture RC id when leaving BUILD
-        if (run.current_stage === 'BUILD' && run.feature_node_id && !run.rc_id) {
-          const rcId = this.findRcForRun(run)
+        if (fresh.current_stage === 'BUILD' && fresh.feature_node_id && !fresh.rc_id) {
+          const rcId = this.findRcForRun(fresh)
           if (rcId) {
             this.db
               .prepare(`UPDATE cycle_runs SET rc_id=?, updated_at=unixepoch()*1000 WHERE id=?`)
@@ -103,16 +139,17 @@ export class CycleOrchestrator {
       }
 
       try {
-        const acted = await this.runEntryAction(run)
+        const acted = await this.runEntryAction(fresh)
         if (!acted) {
           this.setStatus(runId, 'waiting_external', exit.reason)
           this.push(runId)
           return
         }
+        this.push(runId)
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         this.setStatus(runId, 'error', msg)
-        this.log(runId, run.current_stage, 'error', { detail: msg })
+        this.log(runId, fresh.current_stage, 'error', { detail: msg })
         this.push(runId)
         return
       }

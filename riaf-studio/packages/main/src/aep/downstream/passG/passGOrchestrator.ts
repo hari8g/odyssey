@@ -2,9 +2,9 @@
 import type Database from 'better-sqlite3'
 import type { AEPPassProgress } from '@shared/index'
 import type { ILLMProvider } from '../../../llm/llmProvider.interface'
-import { upsertNode, insertEdge } from '../../graphWrite'
 import { A12AttributionAgent } from '../agents/a12AttributionAgent'
 import { A13CrossFunctionalAgent } from '../agents/a13CrossFunctionalAgent'
+import { A14LearningAgent } from '../agents/a14LearningAgent'
 import type { HypothesisVerdictSummary } from '../agents/a12AttributionAgent'
 import type { OrgUnitImpact } from '../agents/a13CrossFunctionalAgent'
 
@@ -95,23 +95,42 @@ export class PassGOrchestrator {
       push({ pass: 'G_verdict', stage: 'cross_functional', pct: 100, detail: `Error: ${String(err)}` })
     }
 
-    // ── G_learn: learning hook stub ───────────────────────────────────────────
+    // ── G_learn: A14 Learning Agent ───────────────────────────────────────────
     let learningHookTriggered = false
     if (input.triggerLearningHook) {
       push({
         pass: 'G_learn',
         stage: 'learning_hook',
         pct: 0,
-        detail: 'Triggering learning hook…',
+        detail: 'Distilling lessons…',
       })
       try {
-        this.emitLearningHook(input.featureId, verdicts)
-        learningHookTriggered = true
+        const validated = verdicts.filter((v) => v.verdict === 'validated').length
+        const refuted = verdicts.filter((v) => v.verdict === 'refuted').length
+        const a14 = new A14LearningAgent(this.db)
+        const a14Result = a14.run({
+          featureId: input.featureId,
+          verdicts: verdicts.map((v) => ({
+            hypothesisNodeId: v.hypothesisId,
+            label: v.hypothesisLabel,
+            outcome:
+              v.verdict === 'validated'
+                ? 'confirmed'
+                : v.verdict === 'refuted'
+                  ? 'refuted'
+                  : 'inconclusive',
+            actualDeltaPct: v.actualDeltaPct,
+            priorConfidence: v.confidence,
+          })),
+          learningNotes:
+            `Cycle complete. ${validated} bets validated, ${refuted} refuted.`,
+        })
+        learningHookTriggered = a14Result.learningNodeIds.length > 0
         push({
           pass: 'G_learn',
           stage: 'learning_hook',
           pct: 100,
-          detail: 'Learning hook emitted (stub)',
+          detail: `${a14Result.learningNodeIds.length} lesson(s) distilled`,
         })
       } catch (err) {
         push({ pass: 'G_learn', stage: 'learning_hook', pct: 100, detail: `Error: ${String(err)}` })
@@ -119,27 +138,5 @@ export class PassGOrchestrator {
     }
 
     return { verdicts, orgUnitImpacts, outcomeReportId, learningHookTriggered }
-  }
-
-  /**
-   * Stub learning hook — in production this would emit an event to a learning pipeline.
-   * Creates a LEARNING node linked to the feature to record that a learning cycle was triggered.
-   */
-  private emitLearningHook(featureId: number, verdicts: HypothesisVerdictSummary[]): void {
-    const validated = verdicts.filter((v) => v.verdict === 'validated').length
-    const refuted = verdicts.filter((v) => v.verdict === 'refuted').length
-
-    const learningId = upsertNode(this.db, {
-      kind: 'LEARNING',
-      label: `Learning: feature #${featureId} — ${validated}V/${refuted}R hypothesis verdicts`,
-      description:
-        `Automated learning cycle triggered by Pass G. ` +
-        `${validated} validated, ${refuted} refuted hypothesis verdicts recorded. ` +
-        `Learning pipeline stub — connect to actual pipeline in production.`,
-      source_type: 'aep_agent',
-      source_ref: 'passg_learning_hook',
-    })
-
-    insertEdge(this.db, featureId, learningId, 'INFORMS', 1.0, { trigger: 'pass_g_completion' })
   }
 }

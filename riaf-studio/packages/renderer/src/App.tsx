@@ -1,6 +1,7 @@
-import { useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { useEffect, useCallback, useRef, useState, type ReactNode } from 'react'
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AppShell } from '@/shell/AppShell'
+import { CommandPalette, ShortcutHelp } from '@/shell/CommandPalette'
 import { PeekProvider, ToastProvider } from '@/design/primitives'
 import { PersonaHome } from '@/screens/home/PersonaHome'
 import { JourneyCanvas } from '@/screens/journey/JourneyCanvas'
@@ -75,6 +76,8 @@ function WorkspaceListener() {
   const { upsertRun: upsertCycleRun, setProgress: setCycleProgress, reset: resetCycle } =
     useCycleStore()
   const { refreshHome, reset: resetUx } = useUXStore()
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [shortcutHelp, setShortcutHelp] = useState(false)
 
   const resetForNewWorkspace = useCallback(() => {
     resetIndexing()
@@ -219,13 +222,30 @@ function WorkspaceListener() {
           window.electronAPI.startIndexer()
           navigate('/room/indexing')
         }
+      } else if (mod && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        setPaletteOpen(true)
+      } else if (mod && (e.key === 'j' || e.key === 'J')) {
+        e.preventDefault()
+        navigate('/journey')
+      } else if (mod && (e.key === 'i' || e.key === 'I')) {
+        e.preventDefault()
+        navigate('/actions')
+      } else if (mod && e.key === '/') {
+        e.preventDefault()
+        setShortcutHelp(true)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [navigate])
 
-  return null
+  return (
+    <>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <ShortcutHelp open={shortcutHelp} onClose={() => setShortcutHelp(false)} />
+    </>
+  )
 }
 
 function IndexingRoom() {

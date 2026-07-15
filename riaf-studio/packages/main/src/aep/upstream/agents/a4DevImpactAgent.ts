@@ -1,6 +1,7 @@
 // packages/main/src/aep/upstream/agents/a4DevImpactAgent.ts
 import type Database from 'better-sqlite3'
 import { ArtifactWriter } from './artifactWriter'
+import { insertEdge } from '../../graphWrite'
 import { FISEngine } from '../../../iss/fisEngine'
 import type { DomainAwareFIS as IDomainAwareFIS } from '../../../domain/domainAwareFIS'
 
@@ -45,9 +46,11 @@ export class A4DevImpactAgent {
         label: `DevImpact: ${brief.label.replace(/^Brief:\s*/i, '').slice(0, 150)}`,
         description: markdownText,
         agentId: 'a4_dev_impact',
-        derivedFrom: [briefId],
+        derivedFrom: [briefId, featureId],
         confidence: 0.7,
       })
+
+      insertEdge(this.db, artifact.nodeId, featureId, 'MOTIVATES', 0.9)
 
       return { assessmentId: artifact.nodeId, topFiles, governedFiles }
     })()

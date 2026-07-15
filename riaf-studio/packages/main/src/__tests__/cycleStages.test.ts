@@ -53,7 +53,7 @@ describe('Cycle stage definitions', () => {
     const version = db
       .prepare('SELECT version FROM schema_version WHERE id = 1')
       .get() as { version: number }
-    expect(version.version).toBe(4)
+    expect(version.version).toBe(5)
 
     for (const stage of STAGES) {
       if (stage.kind === 'TERMINAL') {
@@ -68,12 +68,22 @@ describe('Cycle stage definitions', () => {
     db.close()
   })
 
-  it('creates cycle tables', () => {
+  it('creates cycle and Pass F registry tables', () => {
     const db = makeTestDb()
     const tables = db
-      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'cycle_%'`)
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND (
+           name LIKE 'cycle_%' OR name IN ('build_registry','test_run_registry','deployment_registry')
+         )`,
+      )
       .all() as { name: string }[]
-    expect(tables.map((t) => t.name).sort()).toEqual(['cycle_runs', 'cycle_stage_log'])
+    expect(tables.map((t) => t.name).sort()).toEqual([
+      'build_registry',
+      'cycle_runs',
+      'cycle_stage_log',
+      'deployment_registry',
+      'test_run_registry',
+    ])
     db.close()
   })
 })

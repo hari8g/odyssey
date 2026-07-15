@@ -21,14 +21,41 @@ export class DemoSimulator {
   simulateSignals(runId: number): number {
     this.assertDemo(runId)
     const candidates = [
+      // electron-vite out/main → ../../resources
+      path.join(__dirname, '../../resources/demo/sample_signals.csv'),
       path.join(__dirname, '../../../resources/demo/sample_signals.csv'),
       path.join(app.getAppPath(), 'resources', 'demo', 'sample_signals.csv'),
       path.join(process.cwd(), 'resources', 'demo', 'sample_signals.csv'),
     ]
     const fp = candidates.find((p) => fs.existsSync(p))
     if (!fp) throw new Error('demo sample_signals.csv not found')
-    const result = new CustomerSignalIngester(this.db).ingestFile(fp, 'demo')
-    return result.inserted + result.signalNodeIds.length
+
+    // Raw ingest of the same CSV would INSERT OR IGNORE (hash dedupe) and leave
+    // SIGNALS stuck at 0/5 unclustered after the first demo. Stamp each row so
+    // every Simulate creates fresh, clusterable signals for this run.
+    const raw = fs.readFileSync(fp, 'utf8')
+    const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean)
+    if (lines.length < 2) throw new Error('demo sample_signals.csv is empty')
+    const stamp = ` [cycle-${runId}@${Date.now()}]`
+    const header = lines[0]!.split(',').map((h) => h.trim().toLowerCase())
+    const textIdx = header.indexOf('text')
+    const cohortIdx = header.indexOf('cohort')
+    const typeIdx = header.indexOf('type')
+    const dateIdx = header.indexOf('date')
+    const signals = lines.slice(1).map((line) => {
+      const values = line.split(',').map((v) => v.trim().replace(/^"|"$/g, ''))
+      return {
+        date: dateIdx >= 0 ? values[dateIdx] : undefined,
+        cohort: values[cohortIdx] ?? 'demo',
+        type: values[typeIdx] ?? 'feature_request',
+        text: `${values[textIdx] ?? 'demo signal'}${stamp}`,
+      }
+    })
+    const result = new CustomerSignalIngester(this.db).ingestRaw(signals, `demo-cycle-${runId}`)
+    if (result.inserted === 0) {
+      throw new Error('simulate inserted 0 signals — check sample CSV / dedupe')
+    }
+    return result.inserted
   }
 
   /**

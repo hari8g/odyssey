@@ -194,6 +194,26 @@ export const useUXStore = create<UXState>()(
         })
         homeCacheAt = Date.now()
       }
+      const learnings = await eAPI().aepGetLearnings?.()
+      if (Array.isArray(learnings)) {
+        set((s) => {
+          s.learnings = learnings.slice(0, 10).map((l: {
+            id: number
+            label: string
+            description?: string | null
+            adjustment?: string
+            targets?: string[]
+          }) => ({
+            id: l.id,
+            label: l.label,
+            description:
+              l.description ??
+              (l.adjustment
+                ? JSON.stringify({ adjustment: l.adjustment, targets: l.targets ?? [] })
+                : null),
+          }))
+        })
+      }
       await get().refreshBoard()
       await get().refreshActions()
     },

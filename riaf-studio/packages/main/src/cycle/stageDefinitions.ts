@@ -52,6 +52,16 @@ export const STAGES: StageDef[] = [
     narrative: 'Signals are deduplicated into named, countable problems.',
     fsmState: null,
     exit: (db) => {
+      const unclustered = db
+        .prepare<[], { c: number }>(
+          `SELECT COUNT(*) c FROM graph_nodes WHERE kind='CUSTOMER_SIGNAL'
+           AND id NOT IN (SELECT from_node_id FROM graph_edges WHERE kind='EXPRESSES')`,
+        )
+        .get()!.c
+      // Must consume new signals before leaving — otherwise Cycle 2+ never clusters.
+      if (unclustered > 0) {
+        return { ok: false, reason: `${unclustered} signal(s) awaiting clustering` }
+      }
       const n = db
         .prepare<[], { c: number }>(`SELECT COUNT(*) c FROM graph_nodes WHERE kind='PAIN_POINT'`)
         .get()!.c

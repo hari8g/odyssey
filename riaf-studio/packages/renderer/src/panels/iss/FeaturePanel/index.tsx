@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Plus,
   Upload,
@@ -87,12 +88,14 @@ function FeatureRow({
   onSelect,
   onEdit,
   onDelete,
+  onViewStory,
 }: {
   feature: FeatureSummary
   selected: boolean
   onSelect: () => void
   onEdit: () => void
   onDelete: () => void
+  onViewStory: () => void
 }) {
   const phaseColor = feature.sdlcPhase ? (PHASE_COLOR[feature.sdlcPhase] ?? '#4b5563') : '#4b5563'
   return (
@@ -137,6 +140,23 @@ function FeatureRow({
           <Trash2 size={11} />
         </button>
       </div>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {feature.domainConcept && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded border border-accent-2/40 bg-accent-2/10 text-accent-2 font-mono truncate max-w-[140px]">
+            {feature.domainConcept}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onViewStory()
+          }}
+          className="text-[10px] text-accent hover:underline ml-auto"
+        >
+          View story →
+        </button>
+      </div>
       <CompletionBar pct={feature.completionPct} />
       {feature.description && (
         <p className="text-xs text-gray-600 truncate font-mono">{feature.description}</p>
@@ -146,6 +166,7 @@ function FeatureRow({
 }
 
 export function FeaturePanel() {
+  const navigate = useNavigate()
   const {
     features,
     sdlcMode,
@@ -454,6 +475,7 @@ export function FeaturePanel() {
                   setAddOpen(true)
                 }}
                 onDelete={() => handleDelete(f.id)}
+                onViewStory={() => navigate(`/feature/${f.id}`)}
               />
             ))}
           </div>

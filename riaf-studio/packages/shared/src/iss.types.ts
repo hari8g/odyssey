@@ -120,6 +120,8 @@ export type FeatureSummary = {
   sdlcPhase: SDLCPhase | null
   completionPct: number
   alignmentSource: string | null
+  /** DOMAIN_CONCEPT / GLOSSARY_TERM label via ABOUT edge, if any */
+  domainConcept?: string | null
 }
 
 export type ISSNeedsFeaturesPayload = {

@@ -27,6 +27,8 @@ export function ensureCycleOrchestrator(
 ): CycleOrchestrator {
   if (!cycleOrch) {
     cycleOrch = new CycleOrchestrator(db, win, getProvider)
+  } else {
+    cycleOrch.rebind(db, win)
   }
   return cycleOrch
 }

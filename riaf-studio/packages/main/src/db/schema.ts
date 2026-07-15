@@ -423,3 +423,39 @@ CREATE TABLE IF NOT EXISTS cycle_stage_log (
 );
 CREATE INDEX IF NOT EXISTS idx_csl_run ON cycle_stage_log(run_id, ts);
 `
+
+/** Pass F registries V5 — CI build / test / deployment side tables */
+export const SCHEMA_V5 = `
+CREATE TABLE IF NOT EXISTS build_registry (
+  build_node_id INTEGER PRIMARY KEY REFERENCES graph_nodes(id) ON DELETE CASCADE,
+  sha           TEXT NOT NULL,
+  run_id        TEXT NOT NULL,
+  conclusion    TEXT NOT NULL,
+  built_at      INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+);
+CREATE INDEX IF NOT EXISTS idx_br_sha ON build_registry(sha);
+CREATE INDEX IF NOT EXISTS idx_br_run ON build_registry(run_id);
+
+CREATE TABLE IF NOT EXISTS test_run_registry (
+  test_run_node_id INTEGER PRIMARY KEY REFERENCES graph_nodes(id) ON DELETE CASCADE,
+  build_node_id    INTEGER NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+  status           TEXT NOT NULL,
+  total_tests      INTEGER NOT NULL DEFAULT 0,
+  passed_tests     INTEGER NOT NULL DEFAULT 0,
+  failed_tests     INTEGER NOT NULL DEFAULT 0,
+  duration_ms      INTEGER,
+  ran_at           INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+);
+CREATE INDEX IF NOT EXISTS idx_trr_build ON test_run_registry(build_node_id);
+
+CREATE TABLE IF NOT EXISTS deployment_registry (
+  deployment_node_id INTEGER PRIMARY KEY REFERENCES graph_nodes(id) ON DELETE CASCADE,
+  build_node_id      INTEGER NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+  environment        TEXT NOT NULL,
+  deployed_by        TEXT,
+  version            TEXT,
+  deployed_at        INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+);
+CREATE INDEX IF NOT EXISTS idx_dr_build ON deployment_registry(build_node_id);
+CREATE INDEX IF NOT EXISTS idx_dr_env ON deployment_registry(environment);
+`

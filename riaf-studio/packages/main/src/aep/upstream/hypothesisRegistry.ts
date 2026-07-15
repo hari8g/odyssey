@@ -122,13 +122,27 @@ export class HypothesisRegistry {
   }
 
   /** Get draft (uncommitted) hypotheses for a feature */
-  getDrafts(featureNodeId: number): { hypothesisNodeId: number; label: string; kpiLabel: string }[] {
+  getDrafts(featureNodeId: number): {
+    hypothesisNodeId: number
+    label: string
+    kpiLabel: string
+    priorConfidence: number
+  }[] {
     return this.db
-      .prepare<[number], { hypothesisNodeId: number; label: string; kpiLabel: string }>(
+      .prepare<
+        [number],
+        {
+          hypothesisNodeId: number
+          label: string
+          kpiLabel: string
+          priorConfidence: number
+        }
+      >(
         `SELECT
            vh.hypothesis_node_id AS hypothesisNodeId,
            hn.label              AS label,
-           kn.label              AS kpiLabel
+           kn.label              AS kpiLabel,
+           vh.prior_confidence   AS priorConfidence
          FROM value_hypotheses vh
          JOIN graph_nodes hn ON hn.id = vh.hypothesis_node_id
          JOIN graph_nodes kn ON kn.id = vh.kpi_node_id

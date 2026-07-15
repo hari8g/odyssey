@@ -274,10 +274,21 @@ export function GateSeal({ required, signed }: { required: string[]; signed: str
 // VERB PILL  (Journey Bar unit)
 // ═════════════════════════════════════════════════════════════════════════════
 export function VerbPill({
-  verb, count, needsAttention, active, onClick,
-}: { verb: VerbKey; count: number; needsAttention: boolean; active: boolean; onClick: () => void }) {
+  verb, count, needsAttention, active, onClick, loopClosed,
+}: {
+  verb: VerbKey
+  count: number
+  needsAttention: boolean
+  active: boolean
+  onClick: () => void
+  /** When LEARN has completed items, animate the dot (loop closed). */
+  loopClosed?: boolean
+}) {
   const col = VERB_COLOR[verb]
   const label = verb[0] + verb.slice(1).toLowerCase()
+  const prefersReduced =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
   return (
     <button onClick={onClick}
       className={cx(
@@ -286,7 +297,13 @@ export function VerbPill({
       )}
       style={active ? { color: col.text, background: col.soft } : { color: col.text }}
     >
-      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: col.full }} />
+      <span
+        className={cx(
+          'w-2 h-2 rounded-full flex-shrink-0',
+          loopClosed && !prefersReduced && 'animate-spin-slow',
+        )}
+        style={{ background: col.full }}
+      />
       {label}
       <span className="text-[11px] opacity-70">{count}</span>
       {needsAttention && (

@@ -51,12 +51,32 @@ export class A14LearningAgent {
         `Feature #${featureId}`
 
       // ── 1. Write a top-level LEARNING node for this feature ───────────────
+      const painPoints = this.db
+        .prepare<[number], { id: number; label: string }>(
+          `SELECT gn.id, gn.label FROM graph_edges ge
+           JOIN graph_nodes gn ON gn.id = ge.from_node_id
+           WHERE ge.to_node_id = ? AND gn.kind = 'PAIN_POINT'`,
+        )
+        .all(featureId)
+
+      const targets: string[] = [
+        'A2 fleet estimates',
+        ...painPoints.map((p) => `Pain point: ${p.label}`),
+        'Business objective',
+      ]
+
       const topLearningId = upsertNode(this.db, {
         kind: 'LEARNING',
         label: `Learning: ${featureLabel.slice(0, 120)}`,
-        description:
-          learningNotes ??
-          `Automated learning record after ${verdicts.length} hypothesis verdict(s).`,
+        description: JSON.stringify({
+          adjustment:
+            learningNotes ??
+            `After ${verdicts.length} verdict(s): carry prior confidence adjustments into the next cycle.`,
+          targets,
+          featureId,
+          validated: verdicts.filter((v) => v.outcome === 'confirmed').length,
+          refuted: verdicts.filter((v) => v.outcome === 'refuted').length,
+        }),
         source_type: 'aep_a14',
       })
 
@@ -78,11 +98,17 @@ export class A14LearningAgent {
         const verdictLearningId = upsertNode(this.db, {
           kind: 'LEARNING',
           label: verdictLabel,
-          description:
-            `Hypothesis verdict: ${verdict.outcome}` +
-            (verdict.actualDeltaPct != null
-              ? ` | actual Δ ${verdict.actualDeltaPct.toFixed(1)}%`
-              : ''),
+          description: JSON.stringify({
+            adjustment: `Hypothesis verdict: ${verdict.outcome}${
+              verdict.actualDeltaPct != null
+                ? ` | actual Δ ${verdict.actualDeltaPct.toFixed(1)}%`
+                : ''
+            }`,
+            targets: [`Hypothesis: ${verdict.label}`, 'A2 fleet estimates'],
+            featureId,
+            hypothesisNodeId: verdict.hypothesisNodeId,
+            outcome: verdict.outcome,
+          }),
           source_type: 'aep_a14',
         })
 
@@ -104,15 +130,6 @@ export class A14LearningAgent {
       }
 
       // ── 3. INFORMS edges to PAIN_POINT nodes upstream of the feature ──────
-      const painPoints = this.db
-        .prepare<[number], { id: number }>(
-          `SELECT ge.from_node_id AS id FROM graph_edges ge
-           JOIN graph_nodes gn ON gn.id = ge.from_node_id
-           WHERE ge.to_node_id = ?
-             AND gn.kind = 'PAIN_POINT'`,
-        )
-        .all(featureId)
-
       for (const { id: ppId } of painPoints) {
         insertEdge(this.db, topLearningId, ppId, 'INFORMS')
         edgesCreated++

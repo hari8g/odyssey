@@ -16,45 +16,47 @@ type Tool = {
 const TOOLS: Tool[] = [
   {
     id: 'trace',
-    label: 'Trace',
+    label: 'Find the code',
     placeholder: 'Feature ID or label…',
-    description: 'Trace feature to code nodes',
+    description: 'trace_feature_to_code',
     call: (input) => eAPI.traceFeature(isNaN(Number(input)) ? input : Number(input)),
   },
   {
     id: 'impact',
-    label: 'Impact',
+    label: 'What else changes?',
     placeholder: 'File path or query…',
-    description: 'Impact analysis for a change',
+    description: 'impact_analysis',
     call: (input) => eAPI.impactAnalysis({ query: input }),
   },
   {
     id: 'status',
-    label: 'Status',
+    label: 'How complete is this?',
     placeholder: 'Feature ID or label…',
-    description: 'Implementation status of a feature',
+    description: 'feature_completion_status',
     call: (input) => eAPI.featureStatus(isNaN(Number(input)) ? input : Number(input)),
   },
   {
     id: 'similar',
-    label: 'Similar',
+    label: 'Are there duplicates?',
     placeholder: 'Feature ID or label…',
-    description: 'Find similar / duplicate features',
+    description: 'find_similar_features',
     call: (input) => eAPI.findSimilarFeatures(isNaN(Number(input)) ? input : Number(input)),
   },
   {
     id: 'criteria',
-    label: 'Criteria',
+    label: 'Write acceptance tests',
     placeholder: 'Feature ID or description…',
-    description: 'Generate acceptance criteria',
+    description: 'generate_acceptance_criteria',
     call: (input) => eAPI.genCriteria(isNaN(Number(input)) ? input : Number(input)),
   },
   {
-    id: 'arch',
-    label: 'Arch',
+    id: 'architecture',
+    label: 'Architecture suggestions',
     placeholder: 'Feature ID or description…',
-    description: 'Suggest architecture for feature',
-    call: (input) => eAPI.suggestArch(isNaN(Number(input)) ? input : Number(input)),
+    description: 'suggest_architecture',
+    call: (input) =>
+      eAPI.suggestArchitecture?.(isNaN(Number(input)) ? input : Number(input)) ??
+      eAPI.suggestArch?.(isNaN(Number(input)) ? input : Number(input)),
   },
 ]
 
@@ -110,6 +112,7 @@ export function POWorkbenchPanel() {
         {TOOLS.map((t) => (
           <button
             key={t.id}
+            title={t.description}
             onClick={() => setActiveTool(t.id)}
             className={clsx(
               'px-2.5 py-0.5 text-xs font-mono rounded border transition-colors',

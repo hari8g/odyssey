@@ -125,6 +125,7 @@ function getFeatures(db: Database.Database): FeatureSummary[] {
         sdlc_phase: string | null
         completion_pct: number | null
         alignment_source: string | null
+        domain_concept: string | null
       }
     >(
       `SELECT
@@ -132,7 +133,12 @@ function getFeatures(db: Database.Database): FeatureSummary[] {
          sps.completion_pct,
          (SELECT ge.source FROM graph_edges ge
           WHERE ge.from_node_id = gn.id AND ge.kind = 'IMPLEMENTS'
-          ORDER BY ge.confidence DESC LIMIT 1) as alignment_source
+          ORDER BY ge.confidence DESC LIMIT 1) as alignment_source,
+         (SELECT dc.label FROM graph_edges ge2
+          JOIN graph_nodes dc ON dc.id = ge2.to_node_id
+          WHERE ge2.from_node_id = gn.id AND ge2.kind = 'ABOUT'
+            AND dc.kind IN ('DOMAIN_CONCEPT','GLOSSARY_TERM')
+          LIMIT 1) as domain_concept
        FROM graph_nodes gn
        LEFT JOIN sdlc_phase_summary sps ON sps.feature_node_id = gn.id
        WHERE gn.kind IN ('FEATURE','EPIC','USER_STORY')
@@ -148,6 +154,7 @@ function getFeatures(db: Database.Database): FeatureSummary[] {
     sdlcPhase: (r.sdlc_phase as FeatureSummary['sdlcPhase']) ?? null,
     completionPct: r.completion_pct ?? computeCompletionPct(db, r.id),
     alignmentSource: r.alignment_source,
+    domainConcept: r.domain_concept,
   }))
 }
 

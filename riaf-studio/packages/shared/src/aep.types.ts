@@ -157,6 +157,7 @@ export type DomainAwareFISResult = {
   domainRelevance: number
   isGoverned: boolean
   contexts: string[]
+  regulations?: string[]
 }
 
 export type BlastRadius = {
@@ -212,4 +213,21 @@ export type GoldenThread = {
   deployments: { id: number; label: string }[]
   verdicts: { id: number; label: string; kind: string }[]
   learnings: { id: number; label: string }[]
+  orgImpacts: { id: number; orgUnitLabel: string; summary: string }[]
+}
+
+export type OutcomeRow = {
+  id: number
+  featureId: number
+  featureLabel: string
+  kpiLabel: string
+  direction: string
+  magnitudePct: number
+  timeframeDays: number
+  priorConfidence: number
+  attributionMethod: string
+  actualDeltaPct: number | null
+  verdict: 'validated' | 'refuted' | 'inconclusive'
+  rationale: string | null
+  createdAt: number
 }

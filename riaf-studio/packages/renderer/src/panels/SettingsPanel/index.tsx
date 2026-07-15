@@ -471,6 +471,17 @@ export function SettingsPanel() {
           />
         </Field>
       </Section>
+
+      <Section title="Keyboard shortcuts">
+        <ul className="space-y-1.5 text-xs text-gray-400 font-mono">
+          <li className="flex justify-between gap-4"><span>Command palette</span><span>⌘/Ctrl+K</span></li>
+          <li className="flex justify-between gap-4"><span>Journey Canvas</span><span>⌘/Ctrl+J</span></li>
+          <li className="flex justify-between gap-4"><span>Actions Inbox</span><span>⌘/Ctrl+I</span></li>
+          <li className="flex justify-between gap-4"><span>Open workspace</span><span>⌘/Ctrl+O</span></li>
+          <li className="flex justify-between gap-4"><span>Re-index</span><span>⌘/Ctrl+R</span></li>
+          <li className="flex justify-between gap-4"><span>Shortcut help</span><span>⌘/Ctrl+/</span></li>
+        </ul>
+      </Section>
         </div>
       )}
     </div>

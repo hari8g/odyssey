@@ -223,6 +223,9 @@ const api = {
   domainGetContexts: () => ipcRenderer.invoke('domain:getContexts'),
   domainGetRegulations: () => ipcRenderer.invoke('domain:getRegulations'),
   domainGetConcepts: () => ipcRenderer.invoke('domain:getConcepts'),
+  domainGetRules: () => ipcRenderer.invoke('domain:getRules'),
+  domainGetContextFiles: (opts?: { contextId?: number; regulationId?: number }) =>
+    ipcRenderer.invoke('domain:getContextFiles', opts),
 
   // ── AEP: Upstream ──────────────────────────────────────────────────────────
   aepLoadOrgPacks: (packPaths: string[]) =>
@@ -231,6 +234,8 @@ const api = {
     ipcRenderer.invoke('aep:ingestSignals', { source, content }),
   aepClusterPainPoints: () => ipcRenderer.invoke('aep:clusterPainPoints'),
   aepGetPainPoints: () => ipcRenderer.invoke('aep:getPainPoints'),
+  aepGetPainPointSignals: (painPointId: number, limit?: number) =>
+    ipcRenderer.invoke('aep:getPainPointSignals', { painPointId, limit }),
   aepRunA1: (painPointIds: number[]) => ipcRenderer.invoke('aep:runA1', { painPointIds }),
   aepRunA2: (briefId: number, featureId: number) =>
     ipcRenderer.invoke('aep:runA2', { briefId, featureId }),
@@ -240,7 +245,8 @@ const api = {
     ipcRenderer.invoke('aep:runA4', { briefId, featureId }),
   aepRunA5: (featureId: number) => ipcRenderer.invoke('aep:runA5', { featureId }),
   aepPortfolioGate: (input: unknown) => ipcRenderer.invoke('aep:portfolioGate', input),
-  aepGetHypotheses: () => ipcRenderer.invoke('aep:getHypotheses'),
+  aepGetHypotheses: (opts?: { featureId?: number; includeDrafts?: boolean }) =>
+    ipcRenderer.invoke('aep:getHypotheses', opts),
   aepGetValueStream: () => ipcRenderer.invoke('aep:getValueStream'),
 
   // ── AEP: Downstream ────────────────────────────────────────────────────────
@@ -291,6 +297,8 @@ const api = {
     ipcRenderer.invoke('aep:getCalibration', { agentId }),
   aepGetGoldenThread: (featureId: number) =>
     ipcRenderer.invoke('aep:getGoldenThread', { featureId }),
+  aepGetLearnings: () => ipcRenderer.invoke('aep:getLearnings'),
+  aepGetOutcomes: () => ipcRenderer.invoke('aep:getOutcomes'),
   aepDomainFIS: (query: string, mode?: string) =>
     ipcRenderer.invoke('aep:domainFIS', { query, mode }),
 

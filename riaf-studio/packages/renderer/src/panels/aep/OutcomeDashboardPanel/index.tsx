@@ -1,217 +1,327 @@
+/**
+ * panels/aep/OutcomeDashboardPanel/index.tsx
+ * LEARN room — the raw data behind the narrative in the Learn Hub.
+ */
 import { useCallback, useEffect, useState } from 'react'
-import { BarChart2, RefreshCw, Loader2, Activity } from 'lucide-react'
-import { clsx } from 'clsx'
-import { useAepStore } from '@/store/aep.store'
+import { useNavigate } from 'react-router-dom'
+import { Badge, DataTable, EmptyState, Sparkline, useToast } from '@/design/primitives'
+import type { StatusKey } from '@/design/tokens'
+import { DICT } from '@/design/dictionary'
+import { agentName } from '@/store/cycle.store'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const eAPI = window.electronAPI as any
+const eAPI = () => window.electronAPI as any
 
-interface GoldenThread {
+type ValueStreamFeature = { id: number; label: string; stream_state: string; entered_state_at: number }
+
+type OutcomeApiRow = {
+  id: number
   featureId: number
   featureLabel: string
-  streamState: string
-  painPoints: { id: number; label: string }[]
-  hypotheses: { hypothesisNodeId: number; label: string }[]
-  domainConcepts: { id: number; label: string }[]
-  builds: { id: number; label: string }[]
-  deployments: { id: number; label: string }[]
-  verdicts: { id: number; label: string; kind: string }[]
-  learnings: { id: number; label: string }[]
+  kpiLabel: string
+  direction: string
+  magnitudePct: number
+  timeframeDays: number
+  actualDeltaPct: number | null
+  verdict: 'validated' | 'refuted' | 'inconclusive'
+  createdAt: number
 }
 
-interface FeatureItem {
+type VerdictRow = {
+  id: string
+  featureId: number
+  initiative: string
+  metric: string
+  predicted: string
+  status: 'validated' | 'refuted' | 'inconclusive'
+  actualDeltaPct: number | null
+  predictedMagnitude: number
+  when: number
+}
+
+type OrgImpactGroup = { orgUnitLabel: string; summaries: string[] }
+
+type CalibrationRow = {
   id: number
-  label: string
-  stream_state: string
+  agentId: string
+  cycleEndDate: string
+  predictions: number
+  verified: number
+  meanErrorPct: number | null
+  calibrationScore: number | null
+}
+
+function sentimentOf(text: string): 'positive' | 'neutral' | 'mixed' | 'negative' {
+  const lower = text.toLowerCase()
+  const neg = /risk|concern|issue|blocker|negative|breach|halt|complaint/.test(lower)
+  const pos = /improved|success|positive|paid off|validated|growth|delight/.test(lower)
+  if (pos && neg) return 'mixed'
+  if (pos) return 'positive'
+  if (neg) return 'negative'
+  return 'neutral'
+}
+
+const SENTIMENT_BADGE: Record<'positive' | 'neutral' | 'mixed' | 'negative', StatusKey> = {
+  positive: 'ok',
+  neutral: 'neutral',
+  mixed: 'warn',
+  negative: 'danger',
+}
+
+function splitSentences(text: string): string[] {
+  return text
+    .replace(/^\[stub\]\s*/i, '')
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+type Trend = 'improving' | 'stable' | 'degrading'
+
+function computeTrend(values: number[]): Trend {
+  if (values.length < 2) return 'stable'
+  const first = values[0]!
+  const last = values[values.length - 1]!
+  if (last < first - 5) return 'improving'
+  if (last > first + 5) return 'degrading'
+  return 'stable'
+}
+
+const TREND_META: Record<Trend, { arrow: string; color: string }> = {
+  improving: { arrow: '↓', color: 'text-ok' },
+  stable: { arrow: '→', color: 'text-ink-3' },
+  degrading: { arrow: '↑', color: 'text-danger' },
+}
+
+function trendInterpretation(trend: Trend, cycles: number): string {
+  if (trend === 'improving') return 'Predictions getting more accurate — lessons are working'
+  if (trend === 'degrading') return "Predictions getting less accurate — this agent's prompts may need review"
+  return `Consistent accuracy over ${cycles} cycle${cycles === 1 ? '' : 's'}`
 }
 
 export function OutcomeDashboardPanel() {
-  const [features, setFeatures] = useState<FeatureItem[]>([])
-  const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(null)
-  const [goldenThread, setGoldenThread] = useState<GoldenThread | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [passGLoading, setPassGLoading] = useState(false)
-  const [status, setStatus] = useState<string | null>(null)
-  const [deploymentId, setDeploymentId] = useState('')
+  const navigate = useNavigate()
+  const { push } = useToast()
+
+  const [tab, setTab] = useState<'verdicts' | 'team' | 'calibration'>('verdicts')
+  const [loading, setLoading] = useState(true)
+  const [verdicts, setVerdicts] = useState<VerdictRow[]>([])
+  const [orgImpacts, setOrgImpacts] = useState<OrgImpactGroup[]>([])
+  const [calibration, setCalibration] = useState<CalibrationRow[]>([])
 
   const refresh = useCallback(async () => {
-    const vs = await eAPI.aepGetValueStream?.()
-    setFeatures(vs ?? [])
-  }, [])
-
-  useEffect(() => { void refresh() }, [refresh])
-
-  const loadGoldenThread = async (featureId: number) => {
     setLoading(true)
     try {
-      const result = await eAPI.aepGetGoldenThread?.(featureId)
-      if ((result as { error?: string })?.error) {
-        setStatus(`Error: ${(result as { error: string }).error}`)
-        setGoldenThread(null)
-      } else {
-        setGoldenThread(result as GoldenThread)
+      const [outcomes, vs, cal] = await Promise.all([
+        eAPI().aepGetOutcomes?.(),
+        eAPI().aepGetValueStream?.(),
+        eAPI().aepGetCalibration?.(),
+      ])
+
+      const outcomeRows: OutcomeApiRow[] = Array.isArray(outcomes) ? outcomes : []
+      setVerdicts(
+        outcomeRows.map((r) => ({
+          id: String(r.id),
+          featureId: r.featureId,
+          initiative: r.featureLabel,
+          metric: r.kpiLabel,
+          predicted: DICT.phrases.betLine(r.kpiLabel, r.direction, r.magnitudePct, r.timeframeDays),
+          status: r.verdict,
+          actualDeltaPct: r.actualDeltaPct,
+          predictedMagnitude: r.magnitudePct,
+          when: r.createdAt,
+        })),
+      )
+
+      const features: ValueStreamFeature[] = Array.isArray(vs) ? vs : []
+      const threads = await Promise.all(features.map((f) => eAPI().aepGetGoldenThread?.(f.id)))
+
+      const orgMap = new Map<string, string[]>()
+      for (const thread of threads) {
+        const impacts = (thread && !thread.error ? thread.orgImpacts : []) as
+          | { id: number; orgUnitLabel: string; summary: string }[]
+          | undefined
+        for (const imp of impacts ?? []) {
+          if (!imp.summary) continue
+          const list = orgMap.get(imp.orgUnitLabel) ?? []
+          list.push(imp.summary)
+          orgMap.set(imp.orgUnitLabel, list)
+        }
       }
+      setOrgImpacts(Array.from(orgMap.entries()).map(([orgUnitLabel, summaries]) => ({ orgUnitLabel, summaries })))
+
+      setCalibration(Array.isArray(cal) ? cal : [])
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  const validatedCount = verdicts.filter((v) => v.status === 'validated').length
+  const refutedCount = verdicts.filter((v) => v.status === 'refuted').length
+  const inconclusiveCount = verdicts.filter((v) => v.status === 'inconclusive').length
+
+  const calByAgent = new Map<string, CalibrationRow[]>()
+  for (const row of calibration) {
+    const list = calByAgent.get(row.agentId) ?? []
+    list.push(row)
+    calByAgent.set(row.agentId, list)
   }
+  const agentGroups = Array.from(calByAgent.entries()).map(([agentId, rows]) => {
+    const sorted = [...rows].sort((a, b) => a.cycleEndDate.localeCompare(b.cycleEndDate)).slice(-4)
+    const values = sorted.map((r) => r.meanErrorPct ?? 0)
+    const trend = computeTrend(values)
+    return { agentId, rows: sorted, values, trend }
+  })
 
-  const runPassG = async () => {
-    if (!selectedFeatureId) return
-    const depId = parseInt(deploymentId, 10)
-    if (isNaN(depId)) { setStatus('Enter a valid deployment ID'); return }
-
-    setPassGLoading(true)
-    setStatus('Running Pass G (A12 + A13)…')
-    try {
-      const result = await eAPI.aepRunPassG?.({
-        deploymentId: depId,
-        featureId: selectedFeatureId,
-        triggerLearningHook: true,
-      })
-      if ((result as { error?: string })?.error) setStatus(`Error: ${(result as { error: string }).error}`)
-      else setStatus(`Pass G complete — ${(result as { verdicts?: unknown[] })?.verdicts?.length ?? 0} verdicts`)
-      if (selectedFeatureId) await loadGoldenThread(selectedFeatureId)
-    } finally {
-      setPassGLoading(false)
-    }
-  }
-
-  const selectedFeature = features.find((f) => f.id === selectedFeatureId)
+  const anyData = verdicts.length > 0 || orgImpacts.length > 0 || calibration.length > 0
 
   return (
-    <div className="flex flex-col h-full text-sm">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
-        <div className="flex items-center gap-2 text-gray-300 font-medium">
-          <BarChart2 size={14} />
-          <span>Outcomes</span>
-        </div>
-        <button onClick={() => void refresh()} className="p-1 text-gray-500 hover:text-gray-200 hover:bg-surface-3 rounded">
-          <RefreshCw size={13} />
-        </button>
-      </div>
-
-      {status && (
-        <div className="px-4 py-1 text-xs text-gray-400 border-b border-border bg-surface shrink-0">
-          {status}
-        </div>
-      )}
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Feature list */}
-        <div className="w-2/5 border-r border-border overflow-y-auto">
-          <div className="p-2 space-y-1">
-            {features.length === 0 ? (
-              <p className="text-gray-600 text-xs p-3 text-center">No features.</p>
-            ) : (
-              features.map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => {
-                    setSelectedFeatureId(f.id === selectedFeatureId ? null : f.id)
-                    setGoldenThread(null)
-                    if (f.id !== selectedFeatureId) void loadGoldenThread(f.id)
-                  }}
-                  className={clsx(
-                    'w-full text-left px-2 py-2 rounded border text-xs transition-colors',
-                    selectedFeatureId === f.id
-                      ? 'bg-accent/10 border-accent/40 text-gray-200'
-                      : 'bg-surface-2 border-border/50 hover:border-border text-gray-300',
-                  )}
-                >
-                  <div className="truncate">{f.label}</div>
-                  <div className="text-gray-500 mt-0.5 font-mono">{f.stream_state}</div>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Golden thread + Pass G */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-3">
-          {!selectedFeatureId ? (
-            <p className="text-gray-600 text-xs">Select a feature to view its golden thread.</p>
-          ) : (
-            <>
-              <div className="text-xs text-gray-300 font-medium truncate">{selectedFeature?.label}</div>
-
-              {/* Pass G runner */}
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="Deployment ID"
-                  value={deploymentId}
-                  onChange={(e) => setDeploymentId(e.target.value)}
-                  className="flex-1 bg-surface-3 border border-border rounded px-2 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent"
-                />
-                <button
-                  onClick={() => void runPassG()}
-                  disabled={passGLoading}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-400/20 hover:bg-purple-400/30 text-purple-400 rounded disabled:opacity-50"
-                >
-                  {passGLoading ? <Loader2 size={11} className="animate-spin" /> : <Activity size={11} />}
-                  Pass G
-                </button>
-              </div>
-
-              {loading && (
-                <div className="text-xs text-gray-500 flex items-center gap-1">
-                  <Loader2 size={11} className="animate-spin" /> Loading…
-                </div>
-              )}
-
-              {goldenThread && (
-                <div className="space-y-2">
-                  <ThreadSection label="Pain Points" items={goldenThread.painPoints} color="text-orange-400" />
-                  <ThreadSection label="Domain Concepts" items={goldenThread.domainConcepts} color="text-blue-400" />
-                  <ThreadSection label="Hypotheses" items={goldenThread.hypotheses.map((h) => ({ id: h.hypothesisNodeId, label: h.label }))} color="text-purple-400" />
-                  <ThreadSection label="Builds" items={goldenThread.builds} color="text-yellow-400" />
-                  <ThreadSection label="Deployments" items={goldenThread.deployments} color="text-green-400" />
-                  <ThreadSection
-                    label="Verdicts"
-                    items={goldenThread.verdicts.map((v) => ({
-                      id: v.id,
-                      label: v.label,
-                      badge: v.kind === 'VALIDATES_HYPOTHESIS' ? 'validated' : 'refuted',
-                    }))}
-                    color="text-teal-400"
-                  />
-                  <ThreadSection label="Learnings" items={goldenThread.learnings} color="text-accent" />
-                </div>
-              )}
-            </>
-          )}
+    <div className="flex flex-col h-full">
+      <div className="px-6 py-4 border-b border-line flex-shrink-0">
+        <p className="text-[15px] font-[600] text-ink-1">Outcomes</p>
+        <p className="text-[12px] text-ink-3 mt-0.5">
+          {validatedCount} paid off · {refutedCount} lesson{refutedCount === 1 ? '' : 's'} · {inconclusiveCount} inconclusive
+        </p>
+        <div className="flex gap-1 mt-3">
+          {(
+            [
+              { id: 'verdicts' as const, label: 'Verdicts', count: verdicts.length },
+              { id: 'team' as const, label: 'Per-team impact', count: orgImpacts.length },
+              { id: 'calibration' as const, label: 'Agent calibration', count: agentGroups.length },
+            ]
+          ).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`px-3 py-1.5 text-[12px] rounded-[6px] transition-colors ${
+                tab === t.id ? 'bg-learn/10 text-learn font-[500]' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-3'
+              }`}
+            >
+              {t.label} {t.count > 0 && <span className="ml-1 opacity-60">{t.count}</span>}
+            </button>
+          ))}
         </div>
       </div>
-    </div>
-  )
-}
 
-function ThreadSection({
-  label,
-  items,
-  color,
-}: {
-  label: string
-  items: { id: number; label: string; badge?: string }[]
-  color: string
-}) {
-  if (!items.length) return null
-  return (
-    <div>
-      <div className={clsx('text-xs font-medium mb-1', color)}>{label} ({items.length})</div>
-      <div className="space-y-0.5">
-        {items.slice(0, 5).map((item) => (
-          <div key={item.id} className="flex items-center gap-2 text-xs text-gray-400">
-            <span className="truncate">{item.label}</span>
-            {item.badge && (
-              <span className={clsx('px-1 rounded text-xs shrink-0', item.badge === 'validated' ? 'text-green-400 bg-green-400/10' : 'text-red-400 bg-red-400/10')}>
-                {item.badge}
-              </span>
+      <div className="flex-1 overflow-y-auto p-6">
+        {!loading && !anyData ? (
+          <EmptyState
+            verb="LEARN"
+            title="No outcomes yet"
+            body="Complete a demo cycle through Observe and Learn to see verdicts, team impact, and agent calibration here."
+          />
+        ) : (
+          <>
+            {tab === 'verdicts' && (
+              <DataTable<VerdictRow>
+                cols={[
+                  { key: 'initiative', header: 'Initiative' },
+                  { key: 'metric', header: 'Metric' },
+                  { key: 'predicted', header: 'We predicted' },
+                  {
+                    key: 'actualDeltaPct',
+                    header: 'What happened',
+                    render: (row) => (
+                      <span className={row.status === 'validated' ? 'text-ok' : 'text-ink-2'}>
+                        {row.actualDeltaPct != null ? `${row.actualDeltaPct.toFixed(1)}%` : 'no data'} vs {row.predictedMagnitude}% predicted
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'status',
+                    header: 'Verdict',
+                    render: (row) => (
+                      <span className={row.status === 'validated' ? 'text-ok' : 'text-ink-3'}>
+                        {row.status === 'validated' ? '✓ Validated' : row.status === 'refuted' ? '~ Refuted' : '· Inconclusive'}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'when',
+                    header: 'When',
+                    render: (row) => <span>{row.when ? new Date(row.when).toLocaleDateString() : '—'}</span>,
+                  },
+                ]}
+                rows={verdicts}
+                onRow={(row) => navigate(`/feature/${row.featureId}`)}
+                emptyText="No verdicts yet"
+              />
             )}
-          </div>
-        ))}
-        {items.length > 5 && <div className="text-xs text-gray-600">+{items.length - 5} more</div>}
+
+            {tab === 'team' &&
+              (orgImpacts.length === 0 ? (
+                <p className="text-[13px] text-ink-3">No team impact assessments recorded yet.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-4xl">
+                  {orgImpacts.map((group) => {
+                    const combined = group.summaries.join(' ')
+                    const sentiment = sentimentOf(combined)
+                    const sentences = splitSentences(combined)
+                    const summary = sentences.slice(0, 2).join(' ')
+                    const actions = sentences.slice(2, 5)
+                    return (
+                      <div key={group.orgUnitLabel} className="bg-surface-2 border border-line rounded-[12px] p-4 flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[13px] font-[500] text-ink-1">{group.orgUnitLabel}</p>
+                          <Badge variant={SENTIMENT_BADGE[sentiment]}>{sentiment}</Badge>
+                        </div>
+                        <p className="text-[12px] text-ink-2">{summary || 'No summary available yet.'}</p>
+                        {actions.length > 0 && (
+                          <div className="flex flex-col gap-0.5">
+                            {actions.map((a, i) => (
+                              <p key={i} className="text-[11px] text-ink-3">→ {a}</p>
+                            ))}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(`${group.orgUnitLabel}\n${summary}`)
+                            push({ message: 'Copied to clipboard', status: 'ok' })
+                          }}
+                          className="self-start text-[11px] text-ink-3 hover:text-ink-1 mt-1"
+                        >
+                          Share
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+
+            {tab === 'calibration' &&
+              (agentGroups.length === 0 ? (
+                <p className="text-[13px] text-ink-3">No calibration data yet.</p>
+              ) : (
+                <div className="flex flex-col gap-3 max-w-2xl">
+                  {agentGroups.map(({ agentId, rows, values, trend }) => {
+                    const meta = TREND_META[trend]
+                    const latest = rows[rows.length - 1]
+                    return (
+                      <div key={agentId} className="bg-surface-3 border border-line rounded-[10px] p-4 flex items-center gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-[500] text-ink-1">{agentName(agentId)}</span>
+                            <span className={`text-[13px] ${meta.color}`}>{meta.arrow}</span>
+                          </div>
+                          <p className="text-[12px] text-ink-3 mt-0.5">
+                            {latest?.meanErrorPct != null ? `Mean error ${latest.meanErrorPct.toFixed(1)}%` : 'No error data yet'}
+                          </p>
+                          <p className="text-[11px] text-ink-3 mt-1">{trendInterpretation(trend, rows.length)}</p>
+                        </div>
+                        {values.length >= 2 && <Sparkline values={values} color={meta.color.includes('ok') ? '#2FBF8F' : meta.color.includes('danger') ? '#E25C5C' : '#6F747E'} />}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+          </>
+        )}
       </div>
     </div>
   )

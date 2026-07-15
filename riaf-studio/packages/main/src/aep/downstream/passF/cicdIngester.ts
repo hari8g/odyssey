@@ -80,11 +80,12 @@ export class CicdIngester {
 
   private findFileNode(filePath: string): number | undefined {
     const row = this.db
-      .prepare<[string, string], { id: number }>(
+      .prepare<[string, string, string], { id: number }>(
         `SELECT id FROM graph_nodes
-         WHERE source_ref = ? OR label = ? LIMIT 1`,
+         WHERE file_path = ? OR source_ref = ? OR label = ?
+         LIMIT 1`,
       )
-      .get(filePath, filePath)
+      .get(filePath, filePath, filePath)
     return row?.id
   }
 }

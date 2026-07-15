@@ -7,6 +7,7 @@ type DomainInfo = {
   domainRelevance: number
   isGoverned: boolean
   contexts: string[]
+  regulations: string[]
 }
 
 /**
@@ -67,6 +68,7 @@ export class DomainAwareFIS {
         domainRelevance: info.domainRelevance,
         isGoverned: info.isGoverned,
         contexts: info.contexts,
+        regulations: info.regulations,
       })
     }
 
@@ -83,7 +85,7 @@ export class DomainAwareFIS {
       .map((r) => r.id)
 
     if (fileNodeIds.length === 0) {
-      return { domainRelevance: 0.2, isGoverned: false, contexts: [] }
+      return { domainRelevance: 0.2, isGoverned: false, contexts: [], regulations: [] }
     }
 
     const placeholders = fileNodeIds.map(() => '?').join(',')
@@ -102,14 +104,18 @@ export class DomainAwareFIS {
 
     const contexts = [...new Set(contextRows.map((c) => c.contextLabel))]
     const contextIds = contextRows.map((c) => c.contextId)
-    const governed = this.db
-      .prepare<number[]>(
-        `SELECT 1 FROM graph_edges
-         WHERE from_node_id IN (${placeholders}) AND kind = 'GOVERNED_BY'
-         LIMIT 1`,
+    const regulationRows = this.db
+      .prepare<number[], { label: string }>(
+        `SELECT DISTINCT gn.label AS label
+         FROM graph_edges ge
+         JOIN graph_nodes gn ON gn.id = ge.to_node_id
+         WHERE ge.from_node_id IN (${placeholders})
+           AND ge.kind = 'GOVERNED_BY'
+           AND gn.kind = 'REGULATION'`,
       )
-      .get(...fileNodeIds)
-    const isGoverned = !!governed
+      .all(...fileNodeIds)
+    const regulations = regulationRows.map((r) => r.label)
+    const isGoverned = regulations.length > 0
 
     // Compute domain relevance
     const hasRelevantContext = contextIds.some((id) => relevantConceptIds.has(id))
@@ -122,6 +128,6 @@ export class DomainAwareFIS {
       domainRelevance = 0.5
     }
 
-    return { domainRelevance, isGoverned, contexts }
+    return { domainRelevance, isGoverned, contexts, regulations }
   }
 }

@@ -3,15 +3,18 @@
  * One initiative's whole life told as a narrative timeline.
  * The golden thread made human.
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Card, Badge, EvidenceChip, GateSeal, Timeline, ProgressRibbon,
-  Button, EmptyState, usePeek, Term,
+  Badge, EvidenceChip, ProgressRibbon,
+  Button, EmptyState, usePeek,
 } from '@/design/primitives'
-import { VERB_COLOR, STATUS_COLOR, type VerbKey } from '@/design/tokens'
+import { VERB_COLOR, type VerbKey } from '@/design/tokens'
 import { DICT, t } from '@/design/dictionary'
 import { useCycleStore } from '@/store/cycle.store'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const eAPI = () => window.electronAPI as any
 
 // ── Stage narration helpers ───────────────────────────────────────────────────
 type StageState = 'done' | 'active' | 'locked'
@@ -27,34 +30,21 @@ function stageToVerb(stage: string): VerbKey {
   return map[stage] ?? 'BUILD'
 }
 
-// Past-tense narrative per completed stage (shown collapsed)
-const DONE_LINES: Record<string, (d: DoneData) => string> = {
-  SIGNALS:         d => `${d.count ?? '?'} customers voiced the problem`,
-  CLUSTER:         d => `Synthesized into ${d.count ?? '?'} named problem${d.count !== 1 ? 's' : ''}`,
-  INTAKE:          d => `Case for action written and classified`,
-  QUALIFY:         d => `Sized at ${d.effort ?? '?'} and worth ${d.value ?? '?'}`,
-  PACKET:          d => `Decision packet assembled and ready for the forum`,
-  PORTFOLIO_GATE:  d => `Admitted by ${d.role ?? 'the forum'} — bets locked`,
-  BUILD:           d => `${d.count ?? '?'} files traced, ${d.builds ?? '?'} builds`,
-  CONSOLIDATE:     d => `Readiness confirmed — ${d.gaps ?? 'no'} gaps, ${d.scopes ?? '4'} scopes clear`,
-  RELEASE_GATE:    d => `All ${d.count ?? '?'} required signatures recorded`,
-  ROLLOUT:         d => `Deployed to production — ${d.strategy ?? 'canary'} rollout`,
-  OBSERVE:         d => `${d.count ?? '?'} measurements taken over ${d.days ?? '?'} days`,
-  LEARN:           d => `${d.validated ?? 0} bet${d.validated !== 1 ? 's' : ''} validated · ${d.lessons ?? 0} lesson${d.lessons !== 1 ? 's' : ''} distilled`,
-}
-type DoneData = { count?: number; effort?: string; value?: string; role?: string; gaps?: number; builds?: number; scopes?: number; strategy?: string; days?: number; validated?: number; lessons?: number }
+type GraphNodeCache = Record<number, { id: number; kind: string; label: string; description: string | null }>
 
 // ── Stage narrative rows ──────────────────────────────────────────────────────
 function StageRow({
   stageId, state, title, narrative, verb, children, artifacts = [],
-  bounceFrom, peekContent,
+  bounceReason, onOpenArtifact,
 }: {
   stageId: string; state: StageState; title: string; narrative: string
-  verb: VerbKey; children?: React.ReactNode; artifacts?: { label: string; kind: string; id: number }[]
-  bounceFrom?: string; peekContent?: React.ReactNode
+  verb: VerbKey; children?: React.ReactNode
+  artifacts?: { id: number; kind: string; label: string }[]
+  bounceReason?: string
+  onOpenArtifact: (nodeId: number) => void
 }) {
   const col = VERB_COLOR[verb]
-  const { open } = usePeek()
+  void stageId
 
   return (
     <div className="relative">
@@ -69,20 +59,20 @@ function StageRow({
           style={state === 'active' ? { borderColor: col.full, background: col.soft } : undefined}>
           {state === 'done'   && <span className="text-ink-3 text-[12px]">✓</span>}
           {state === 'active' && <span className="text-[14px]" style={{ color: col.full }}>●</span>}
-          {state === 'locked' && <span className="text-ink-3/30 text-[12px]">○</span>}
+          {state === 'locked' && <span className="text-ink-3/30 text-[12px]">🔒</span>}
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
           {/* Bounce annotation */}
-          {bounceFrom && (
+          {bounceReason && (
             <div className="mb-2 flex items-center gap-2 text-[11px] text-danger">
-              <span>↩</span><span>Sent back from {bounceFrom} — {narrative}</span>
+              <span>↩</span><span>Sent back — {bounceReason}</span>
             </div>
           )}
 
           <div className="flex items-baseline gap-2 mb-0.5">
-            <p className={`text-[13px] font-[500] ${state === 'locked' ? 'text-ink-3' : 'text-ink-1'}`}>
+            <p className={`text-[13px] font-[500] ${state === 'locked' ? 'text-ink-3 opacity-40' : 'text-ink-1'}`}>
               {title}
             </p>
             {state === 'active' && (
@@ -99,12 +89,12 @@ function StageRow({
             <div className="flex flex-wrap gap-2 mb-2">
               {artifacts.map(a => (
                 <EvidenceChip key={a.id} kind={a.kind} label={a.label}
-                  onClick={() => open(peekContent ?? <p className="text-ink-2">{a.label}</p>, t(a.kind))} />
+                  onClick={() => onOpenArtifact(a.id)} />
               ))}
             </div>
           )}
 
-          {/* Active stage content (AgentProgress / WaitBlock / GateBlock) */}
+          {/* Active stage content (AgentProgress / WaitBlock / GateBlock / ErrorBlock) */}
           {state === 'active' && children && (
             <div className="mt-3">{children}</div>
           )}
@@ -149,6 +139,24 @@ function AgentProgressBlock({ agents, pct, detail }: { agents: string[]; pct: nu
   )
 }
 
+// ── Error block ────────────────────────────────────────────────────────────────
+function ErrorBlock({ error, onRetry }: { error?: string; onRetry: () => void }) {
+  return (
+    <div className="bg-danger/10 border border-danger/30 rounded-[10px] p-4 flex flex-col gap-3">
+      <div className="flex items-start gap-2">
+        <span className="text-danger text-sm mt-0.5">✕</span>
+        <div>
+          <p className="text-[12px] font-[500] text-ink-1">Needs attention</p>
+          {error && <p className="text-[11px] text-danger mt-0.5">{error}</p>}
+        </div>
+      </div>
+      <Button variant="danger" onClick={onRetry} className="self-start text-[11px]">
+        Retry
+      </Button>
+    </div>
+  )
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // FEATURE STORY
 // ═════════════════════════════════════════════════════════════════════════════
@@ -156,18 +164,23 @@ export function FeatureStory() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { progress } = useCycleStore()
+  const { open } = usePeek()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [story, setStory] = useState<any>(null)
-  const [run, setRun]   = useState<any>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [run, setRun] = useState<any>(null)
   const [loaded, setLoaded] = useState(false)
   const [isEngineer, setIsEngineer] = useState(false)
-  const api = window.electronAPI as any
+  const [nodeCache, setNodeCache] = useState<GraphNodeCache>({})
+  const [fisResults, setFisResults] = useState<Array<Record<string, unknown>> | null>(null)
+  const [fisRunning, setFisRunning] = useState(false)
 
   useEffect(() => {
     if (!id) return
     setLoaded(false)
     Promise.all([
-      api.uxGetFeatureStory?.(parseInt(id, 10)),
-      api.cycleList?.() ?? [],
+      eAPI().uxGetFeatureStory?.(parseInt(id, 10)),
+      eAPI().cycleList?.() ?? [],
     ]).then(([s, runs]: [any, any]) => {
       setStory(s && !s.error ? s : null)
       const list = Array.isArray(runs) ? runs : []
@@ -177,6 +190,105 @@ export function FeatureStory() {
       setLoaded(true)
     })
   }, [id])
+
+  // Lazily hydrate the node cache for timeline artifacts and bet verdicts —
+  // both are only IDs on the story payload; we fetch human-readable content on demand.
+  useEffect(() => {
+    if (!story) return
+    const timelineIds: number[] = (story.timeline ?? [])
+      .map((r: any) => r.artifact_node_id)
+      .filter((x: unknown): x is number => typeof x === 'number')
+    const betVerdictIds: number[] = (story.bets ?? [])
+      .map((b: any) => b.verdict_node_id)
+      .filter((x: unknown): x is number => typeof x === 'number')
+    const ids = Array.from(new Set([...timelineIds, ...betVerdictIds])).filter((nid) => !nodeCache[nid])
+    if (ids.length === 0) return
+    void Promise.all(ids.map((nid) => eAPI().uxGetGraphNode?.(nid))).then((nodes) => {
+      setNodeCache((prev) => {
+        const next = { ...prev }
+        nodes.forEach((n: any, i: number) => {
+          const nid = ids[i]
+          if (n && !n.error && nid != null) next[nid] = n
+        })
+        return next
+      })
+    })
+  }, [story, nodeCache])
+
+  const bounceByStage = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const row of story?.timeline ?? []) {
+      if (row.event === 'bounced') {
+        let reason = 'sent back for rework'
+        try {
+          const d = row.detail_json ? JSON.parse(row.detail_json) : {}
+          if (d.reason) reason = d.reason
+        } catch {
+          /* keep default */
+        }
+        map[row.stage] = reason
+      }
+    }
+    return map
+  }, [story])
+
+  const artifactsByStage = useMemo(() => {
+    const map: Record<string, { id: number; kind: string; label: string }[]> = {}
+    const seen = new Set<number>()
+    for (const row of story?.timeline ?? []) {
+      const nid = row.artifact_node_id
+      if (typeof nid !== 'number' || seen.has(nid)) continue
+      seen.add(nid)
+      const cached = nodeCache[nid]
+      const list = map[row.stage] ?? (map[row.stage] = [])
+      list.push({
+        id: nid,
+        kind: cached?.kind ?? 'FEATURE',
+        label: cached?.label ?? `Evidence #${nid}`,
+      })
+    }
+    return map
+  }, [story, nodeCache])
+
+  function openArtifact(nodeId: number) {
+    const node = nodeCache[nodeId]
+    open(
+      <div className="flex flex-col gap-2">
+        <p className="text-[13px] font-[500] text-ink-1">{node?.label ?? `Node #${nodeId}`}</p>
+        <pre className="text-[11px] text-ink-2 whitespace-pre-wrap bg-surface-3 rounded-[8px] p-3 max-h-[60vh] overflow-y-auto">
+          {node?.description ?? 'Loading…'}
+        </pre>
+      </div>,
+      node ? t(node.kind) : 'Evidence',
+    )
+  }
+
+  function openVoices() {
+    open(
+      <div className="flex flex-col gap-2">
+        {(story.signals ?? []).length === 0 ? (
+          <p className="text-[13px] text-ink-3">No sample voices captured yet.</p>
+        ) : (
+          (story.signals ?? []).slice(0, 10).map((s: any) => (
+            <div key={s.id} className="bg-surface-3 border border-line rounded-[8px] p-3">
+              <p className="text-[12px] text-ink-2">{s.label}</p>
+            </div>
+          ))
+        )}
+      </div>,
+      `${story.signalCount ?? 0} customer voices`,
+    )
+  }
+
+  async function runFis() {
+    setFisRunning(true)
+    try {
+      const res = await eAPI().aepDomainFIS?.(story.title)
+      setFisResults(Array.isArray(res) ? res : [])
+    } finally {
+      setFisRunning(false)
+    }
+  }
 
   if (!loaded) return (
     <div className="flex items-center justify-center h-full">
@@ -224,7 +336,10 @@ export function FeatureStory() {
             <h1 className="text-[18px] font-[600] text-ink-1 mb-1">{story.title}</h1>
             {story.originProblem && (
               <p className="text-[13px] text-ink-3">
-                "{story.originProblem}" — <button className="text-accent underline underline-offset-2">{story.signalCount ?? 0} voices</button>
+                "{story.originProblem}" —{' '}
+                <button onClick={openVoices} className="text-accent underline underline-offset-2">
+                  {story.signalCount ?? 0} voices
+                </button>
               </p>
             )}
           </div>
@@ -233,19 +348,19 @@ export function FeatureStory() {
               {DICT.status[run.status as keyof typeof DICT.status] ?? run.current_stage}
             </Badge>
           )}
-          {!isEngineer && (
-            <Button variant="ghost" onClick={() => setIsEngineer(true)} className="text-[11px]">
-              Engineering view
-            </Button>
-          )}
+          <Button variant="ghost" onClick={() => setIsEngineer(e => !e)} className="text-[11px]">
+            {isEngineer ? 'Exit engineering view' : 'Engineering view'}
+          </Button>
         </div>
 
-        {/* Bets summary */}
+        {/* Bets summary — plain-English bet lines, never raw hypothesis labels */}
         {story.bets && story.bets.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-3">
             {story.bets.map((b: any, i: number) => (
               <span key={i} className="text-[11px] bg-decide/10 border border-decide/30 text-decide-text px-2 py-0.5 rounded-[4px]">
-                {b.label}
+                {b.kpi_label && b.direction && typeof b.magnitude_pct === 'number' && typeof b.timeframe_days === 'number'
+                  ? DICT.phrases.betLine(b.kpi_label, b.direction, b.magnitude_pct, b.timeframe_days)
+                  : b.label}
               </span>
             ))}
           </div>
@@ -264,10 +379,14 @@ export function FeatureStory() {
               const isWaiting = run?.status === 'waiting_external' && idx === currentStageIdx
               const isRunning = run?.status === 'running' && idx === currentStageIdx
               const isGate    = run?.status === 'waiting_gate' && idx === currentStageIdx
+              const isError   = run?.status === 'error' && idx === currentStageIdx
 
               return (
                 <StageRow key={stage.id} stageId={stage.id} state={state}
-                  title={stage.title} narrative={stage.narrative} verb={verb}>
+                  title={stage.title} narrative={stage.narrative} verb={verb}
+                  artifacts={artifactsByStage[stage.id] ?? []}
+                  bounceReason={bounceByStage[stage.id]}
+                  onOpenArtifact={openArtifact}>
                   {isRunning && (
                     <AgentProgressBlock
                       agents={progress?.stage === stage.id ? [progress.stage] : ['working']}
@@ -280,9 +399,9 @@ export function FeatureStory() {
                       simulate={run?.mode === 'demo' ? 'Simulate progress' : undefined}
                       onSimulate={() => {
                         if (!run?.id) return
-                        if (stage.id === 'SIGNALS') void api.cycleSimulateSignals?.(run.id)
-                        else if (stage.id === 'BUILD') void api.cycleSimulateCI?.(run.id)
-                        else void api.cycleSimulateKpi?.(run.id, 0.9)
+                        if (stage.id === 'SIGNALS') void eAPI().cycleSimulateSignals?.(run.id)
+                        else if (stage.id === 'BUILD') void eAPI().cycleSimulateCI?.(run.id)
+                        else void eAPI().cycleSimulateKpi?.(run.id, 0.9)
                       }}
                     />
                   )}
@@ -290,6 +409,10 @@ export function FeatureStory() {
                     <Button variant="primary" onClick={() => navigate(`/gate/${run.id}/${stage.id}`)}>
                       Go to decision room →
                     </Button>
+                  )}
+                  {isError && (
+                    <ErrorBlock error={run?.error ?? undefined}
+                      onRetry={() => void eAPI().cycleAdvance?.(run.id)} />
                   )}
                 </StageRow>
               )
@@ -304,19 +427,26 @@ export function FeatureStory() {
             <div>
               <p className="text-[11px] font-[600] text-ink-3 uppercase tracking-wide mb-2">The bets</p>
               <div className="flex flex-col gap-2">
-                {story.bets.map((b: any, i: number) => (
-                  <div key={i} className="bg-surface-3 border border-line rounded-[8px] p-3">
-                    <p className="text-[12px] text-ink-1 leading-snug">{b.label}</p>
-                    <p className="text-[11px] text-ink-3 mt-1">
-                      Confidence: {(b.priorConf * 100).toFixed(0)}%
-                    </p>
-                    {b.verdict && (
-                      <p className="text-[11px] mt-1 font-[500]" style={{ color: b.validated ? '#2FBF8F' : '#E8A13C' }}>
-                        {b.validated ? '✓ Paid off' : '~ Lesson taken'}
+                {story.bets.map((b: any, i: number) => {
+                  const verdictNode = typeof b.verdict_node_id === 'number' ? nodeCache[b.verdict_node_id] : undefined
+                  const pending = b.verdict_node_id == null
+                  const validated = verdictNode ? /VALIDATED/i.test(verdictNode.label) : undefined
+                  return (
+                    <div key={i} className="bg-surface-3 border border-line rounded-[8px] p-3">
+                      <p className="text-[12px] text-ink-1 leading-snug">
+                        {b.kpi_label && b.direction && typeof b.magnitude_pct === 'number' && typeof b.timeframe_days === 'number'
+                          ? DICT.phrases.betLine(b.kpi_label, b.direction, b.magnitude_pct, b.timeframe_days)
+                          : b.label}
                       </p>
-                    )}
-                  </div>
-                ))}
+                      <p className="text-[11px] text-ink-3 mt-1">
+                        Confidence: {((b.prior_confidence ?? b.priorConf ?? 0) * 100).toFixed(0)}%
+                      </p>
+                      <p className="text-[11px] mt-1 font-[500]" style={{ color: pending ? '#A9ADB6' : validated ? '#2FBF8F' : '#E8A13C' }}>
+                        {pending ? '⏳ Still measuring' : validated ? '✓ Paid off' : '~ Lesson taken'}
+                      </p>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -327,10 +457,12 @@ export function FeatureStory() {
               <p className="text-[11px] font-[600] text-ink-3 uppercase tracking-wide mb-2">Regulations touched</p>
               <div className="flex flex-col gap-1.5">
                 {story.regulations.map((r: any) => (
-                  <div key={r.id} className="flex items-center gap-2 text-[12px]">
+                  <button key={r.id} type="button"
+                    onClick={() => navigate(`/room/domain?regulation=${r.id}`)}
+                    className="flex items-center gap-2 text-[12px] text-left hover:text-ink-1">
                     <span className="text-warn">⚠</span>
                     <span className="text-ink-2">{r.label}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -352,8 +484,48 @@ export function FeatureStory() {
 
           {/* Engineering view (conditional) */}
           {isEngineer && (
-            <div>
-              <p className="text-[11px] font-[600] text-ink-3 uppercase tracking-wide mb-2">Engineering detail</p>
+            <div className="flex flex-col gap-4">
+              <div>
+                <p className="text-[11px] font-[600] text-ink-3 uppercase tracking-wide mb-2">Top traced files</p>
+                {(story.code ?? []).length === 0 ? (
+                  <p className="text-[12px] text-ink-3">No files traced to this initiative yet.</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {(story.code ?? []).slice(0, 8).map((f: any) => (
+                      <div key={f.id} className="flex items-center justify-between gap-2 bg-surface-3 border border-line rounded-[6px] px-2.5 py-1.5">
+                        <span className="text-[11px] text-ink-2 font-mono truncate">{f.file_path ?? f.label}</span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {f.sdlc_phase && <Badge>{f.sdlc_phase}</Badge>}
+                          <span className="text-[10px] text-ink-3">FIS {typeof f.fis === 'number' ? f.fis.toFixed(2) : '—'}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <p className="text-[11px] font-[600] text-ink-3 uppercase tracking-wide mb-2">Impact analysis</p>
+                <Button variant="ghost" loading={fisRunning} onClick={() => void runFis()} className="text-[11px] w-full">
+                  Run FIS
+                </Button>
+                {fisResults && (
+                  <div className="mt-2 flex flex-col gap-1.5">
+                    {fisResults.length === 0 ? (
+                      <p className="text-[11px] text-ink-3">No related files found.</p>
+                    ) : fisResults.slice(0, 8).map((r: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between gap-2 bg-surface-3 border border-line rounded-[6px] px-2.5 py-1.5">
+                        <span className="text-[11px] text-ink-2 font-mono truncate">{r.filePath}</span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {r.isGoverned && <Badge variant="warn">governed</Badge>}
+                          <span className="text-[10px] text-ink-3">{typeof r.score === 'number' ? r.score.toFixed(2) : ''}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <Button variant="ghost" onClick={() => navigate(`/room/impact?feature=${id}`)} className="text-[11px] w-full">
                 Open in Impact room →
               </Button>
